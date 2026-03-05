@@ -51,14 +51,14 @@ where
         let method = req.method().to_string();
         let uri = req.uri().to_string();
 
-        let cf_id = req
+        let request_id = req
             .headers()
             .get("x-amz-cf-id")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        let cf_display = cf_id.as_deref().unwrap_or("-").to_string();
-        let trace_id = generate_trace_id(cf_id.as_deref());
+        let request_id_display = request_id.as_deref().unwrap_or("-").to_string();
+        let trace_id = generate_trace_id(request_id.as_deref());
         let span_id = generate_span_id();
         let trace_id_hex = hex_encode(&trace_id);
         let span_id_hex = hex_encode(&span_id);
@@ -69,7 +69,7 @@ where
             http.uri = %uri,
             http.status_code = Empty,
             http.latency_ms = Empty,
-            cf.request_id = %cf_display,
+            cf.request_id = %request_id_display,
             trace_id = %trace_id_hex,
             span_id = %span_id_hex,
         );
@@ -168,25 +168,25 @@ mod tests {
     }
 
     #[test]
-    fn extract_cf_id_from_header() {
+    fn extract_request_id_from_header() {
         let req = Request::builder()
             .header("x-amz-cf-id", "test-cf-id-123")
             .body(())
             .unwrap();
-        let cf_id = req
+        let request_id = req
             .headers()
             .get("x-amz-cf-id")
             .and_then(|v| v.to_str().ok());
-        assert_eq!(cf_id, Some("test-cf-id-123"));
+        assert_eq!(request_id, Some("test-cf-id-123"));
     }
 
     #[test]
-    fn missing_cf_id_header() {
+    fn missing_request_id_header() {
         let req = Request::builder().body(()).unwrap();
-        let cf_id = req
+        let request_id = req
             .headers()
             .get("x-amz-cf-id")
             .and_then(|v| v.to_str().ok());
-        assert_eq!(cf_id, None);
+        assert_eq!(request_id, None);
     }
 }

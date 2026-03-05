@@ -1,9 +1,13 @@
 /// Generate a 128-bit trace ID.
 ///
-/// If a CloudFront request ID is provided, derive deterministically via BLAKE3.
-/// Otherwise, generate a random UUID v4.
-pub fn generate_trace_id(cf_id: Option<&str>) -> [u8; 16] {
-    match cf_id {
+/// If a request ID is provided (e.g. CloudFront `x-amz-cf-id`, or any
+/// `x-request-id` / `x-amzn-trace-id` header), derive deterministically
+/// via BLAKE3. This lets multiple services that see the same request ID
+/// produce the same trace ID without coordination.
+///
+/// If `None`, empty, or `"-"`, falls back to a random UUID v4.
+pub fn generate_trace_id(request_id: Option<&str>) -> [u8; 16] {
+    match request_id {
         Some(id) if !id.is_empty() && id != "-" => {
             let hash = blake3::hash(id.as_bytes());
             let mut trace_id = [0u8; 16];
@@ -22,7 +26,7 @@ pub fn generate_span_id() -> [u8; 8] {
 }
 
 /// Encode bytes as lowercase hex. Used for trace_id/span_id display.
-pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+pub fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut s = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
@@ -37,14 +41,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deterministic_for_same_cf_id() {
+    fn deterministic_for_same_request_id() {
         let id1 = generate_trace_id(Some("abc123"));
         let id2 = generate_trace_id(Some("abc123"));
         assert_eq!(id1, id2);
     }
 
     #[test]
-    fn different_cf_ids_produce_different_trace_ids() {
+    fn different_request_ids_produce_different_trace_ids() {
         let id1 = generate_trace_id(Some("abc123"));
         let id2 = generate_trace_id(Some("xyz789"));
         assert_ne!(id1, id2);
