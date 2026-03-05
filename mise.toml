@@ -1,0 +1,19 @@
+[tasks.fmt]
+description = "Format code with cargo fmt"
+run = "cargo fmt"
+
+[tasks.lint]
+description = "Lint with Clippy, failing on warnings"
+run = "cargo clippy -- -D warnings"
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test -- --nocapture"
+
+[tasks.build]
+description = "Build the crate"
+run = "cargo build"
+
+[tasks.verify]
+description = "Full verification (lint + tests)"
+run = "cargo clippy -- -D warnings && cargo test"
