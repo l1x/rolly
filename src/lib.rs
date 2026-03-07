@@ -266,7 +266,9 @@ pub fn propagation_layer() -> PropagationLayer {
 #[doc(hidden)]
 pub mod bench {
     pub use crate::exporter::{Exporter, ExporterConfig};
-    pub use crate::metrics::{counter, gauge, Counter, Gauge};
+    pub use crate::metrics::{
+        counter, gauge, global_registry, Counter, Gauge, MetricSnapshot, MetricsRegistry,
+    };
     pub use crate::otlp_log::{encode_export_logs_request, LogData, SeverityNumber};
     pub use crate::otlp_metrics::encode_export_metrics_request;
     pub use crate::otlp_trace::{

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 static GLOBAL_REGISTRY: OnceLock<MetricsRegistry> = OnceLock::new();
 
 /// Get or initialize the global registry.
-pub(crate) fn global_registry() -> &'static MetricsRegistry {
+pub fn global_registry() -> &'static MetricsRegistry {
     GLOBAL_REGISTRY.get_or_init(MetricsRegistry::new)
 }
 
@@ -27,13 +27,13 @@ pub enum MetricSnapshot {
 }
 
 /// Central registry holding all counters and gauges.
-pub(crate) struct MetricsRegistry {
+pub struct MetricsRegistry {
     counters: RwLock<HashMap<String, Counter>>,
     gauges: RwLock<HashMap<String, Gauge>>,
 }
 
 impl MetricsRegistry {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             counters: RwLock::new(HashMap::new()),
             gauges: RwLock::new(HashMap::new()),
@@ -41,7 +41,7 @@ impl MetricsRegistry {
     }
 
     /// Get or create a counter by name.
-    pub(crate) fn counter(&self, name: &str, description: &str) -> Counter {
+    pub fn counter(&self, name: &str, description: &str) -> Counter {
         // Fast path: read lock
         {
             let counters = self.counters.read().unwrap();
@@ -64,7 +64,7 @@ impl MetricsRegistry {
     }
 
     /// Get or create a gauge by name.
-    pub(crate) fn gauge(&self, name: &str, description: &str) -> Gauge {
+    pub fn gauge(&self, name: &str, description: &str) -> Gauge {
         // Fast path: read lock
         {
             let gauges = self.gauges.read().unwrap();
@@ -87,7 +87,7 @@ impl MetricsRegistry {
     }
 
     /// Snapshot all metrics for encoding. Does not reset counters (cumulative).
-    pub(crate) fn collect(&self) -> Vec<MetricSnapshot> {
+    pub fn collect(&self) -> Vec<MetricSnapshot> {
         let mut snapshots = Vec::new();
 
         {

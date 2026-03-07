@@ -49,3 +49,8 @@ required-features = ["_bench"]
 name = "exporter_throughput"
 harness = false
 required-features = ["_bench"]
+
+[[bench]]
+name = "metrics_encoding"
+harness = false
+required-features = ["_bench"]
