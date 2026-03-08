@@ -11,11 +11,12 @@ ro11y has two layers:
 - Encodes them as OTLP protobuf (`ExportTraceServiceRequest`, `ExportLogsServiceRequest`)
 - Ships via HTTP POST to any OTLP-compatible collector (Vector, Grafana Alloy, OTEL Collector)
 - Dual output: OTLP HTTP primary + JSON stderr fallback (local dev / CloudWatch)
-- Background exporter with 3-retry exponential backoff — telemetry never blocks your application
+- Background exporter with batching (512 items / 1s window), concurrent workers, and 3-retry exponential backoff — telemetry never blocks your application
+- Native OTLP metrics with Counter and Gauge instruments, client-side aggregation, and `ExportMetricsServiceRequest` export
 - Process metrics (CPU, memory) via `/proc` polling on Linux
 
-**HTTP middleware** (optional) — framework-specific request instrumentation:
-- Tower middleware for Axum (built-in today)
+**HTTP middleware** (optional, `tower` feature) — framework-specific request instrumentation:
+- Tower middleware for Axum
 - Extracts request IDs (CloudFront, `x-request-id`, or any header), generates deterministic trace IDs via BLAKE3
 - Creates request spans with method, path, status, latency
 - Emits RED metrics (request duration, count, errors)
@@ -23,30 +24,33 @@ ro11y has two layers:
 
 Any `tracing` span or event from anywhere in your application — HTTP handlers, background tasks, queue consumers, batch jobs — flows through the same OTLP export pipeline.
 
-## Signals: what's standard, what's not
+## Signals
 
 | Signal  | Format                         | Standard |
 |---------|--------------------------------|----------|
 | Traces  | OTLP `ExportTraceServiceRequest` protobuf | Yes |
 | Logs    | OTLP `ExportLogsServiceRequest` protobuf  | Yes |
-| Metrics | Structured log events with `metric`/`type`/`value` fields | No |
+| Metrics | OTLP `ExportMetricsServiceRequest` protobuf | Yes |
 
-Traces and logs follow the [OTLP specification](https://opentelemetry.io/docs/specs/otlp/) and are encoded as native protobuf. Any OTLP-compatible backend can ingest them directly.
+All three signals follow the [OTLP specification](https://opentelemetry.io/docs/specs/otlp/) and are encoded as native protobuf. Any OTLP-compatible backend can ingest them directly.
 
-Metrics are **not** OTLP `ExportMetricsServiceRequest`. Instead, they are emitted as structured `tracing::info!()` events:
+### Metrics
+
+ro11y provides Counter and Gauge instruments with client-side aggregation. Metrics are accumulated in-process and flushed as `ExportMetricsServiceRequest` on a configurable interval (default 10s).
 
 ```rust
-tracing::info!(
-    metric = "http.server.request.duration",
-    r#type = "histogram",
-    value = 42.5,
-    method = "GET",
-    route = "/users/:id",
-    status = 200,
-);
+use ro11y::{counter, gauge};
+
+// Counters are monotonic and cumulative
+let req_counter = counter("http.server.requests", "Total HTTP requests");
+req_counter.add(1, &[("method", "GET"), ("status", "200")]);
+
+// Gauges record last-value
+let mem_gauge = gauge("process.memory.usage", "Memory usage in bytes");
+mem_gauge.set(1_048_576.0, &[("unit", "bytes")]);
 ```
 
-These flow through the log pipeline and are converted to real metrics downstream by Vector's [`log_to_metric`](https://vector.dev/docs/reference/configuration/transforms/log_to_metric/) transform. This avoids the complexity of the OTLP metrics data model (histograms, exponential histograms, summaries, exemplars) at the cost of being non-standard at the wire level.
+Attribute order does not matter — `[("a", "1"), ("b", "2")]` and `[("b", "2"), ("a", "1")]` aggregate to the same data point.
 
 ## Usage
 
@@ -54,13 +58,16 @@ These flow through the log pipeline and are converted to real metrics downstream
 use ro11y::{init, TelemetryConfig};
 use std::time::Duration;
 
-// Generic core — works for any application
 let _guard = init(TelemetryConfig {
     service_name: "my-service",
     service_version: env!("CARGO_PKG_VERSION"),
     environment: "prod",
-    otlp_endpoint: Some("http://vector:4318"),
+    otlp_traces_endpoint: Some("http://vector:4318"),
+    otlp_logs_endpoint: Some("http://vector:4318"),
+    otlp_metrics_endpoint: Some("http://vector:4318"),
+    log_to_stderr: true,
     use_metrics_interval: Some(Duration::from_secs(30)),
+    metrics_flush_interval: None, // default 10s
 });
 
 // All tracing spans/events are now exported as OTLP protobuf
@@ -69,13 +76,40 @@ tracing::info_span!("process_job", job_id = 42).in_scope(|| {
 });
 ```
 
-With HTTP middleware (Axum/Tower):
+Endpoints can be configured independently — send traces to Jaeger, logs to Vector, and metrics to a different collector:
+
+```rust
+let _guard = init(TelemetryConfig {
+    service_name: "my-service",
+    service_version: env!("CARGO_PKG_VERSION"),
+    environment: "prod",
+    otlp_traces_endpoint: Some("http://jaeger:4318"),
+    otlp_logs_endpoint: Some("http://vector:4318"),
+    otlp_metrics_endpoint: Some("http://prometheus-gateway:4318"),
+    log_to_stderr: false,
+    use_metrics_interval: None,
+    metrics_flush_interval: Some(Duration::from_secs(15)),
+});
+```
+
+Set any endpoint to `None` to disable that signal.
+
+### HTTP middleware (Axum/Tower)
+
+The `tower` feature is enabled by default.
 
 ```rust
 let app = axum::Router::new()
     .route("/health", axum::routing::get(health))
     .layer(ro11y::request_layer())       // inbound: request spans + RED metrics
     .layer(ro11y::propagation_layer());  // outbound: W3C traceparent injection
+```
+
+To disable Tower middleware (e.g. for non-HTTP applications):
+
+```toml
+[dependencies]
+ro11y = { version = "0.3", default-features = false }
 ```
 
 ## Pipeline
