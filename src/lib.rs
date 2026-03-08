@@ -47,6 +47,11 @@ pub struct TelemetryConfig {
     /// How often to flush aggregated metrics to the OTLP endpoint.
     /// Defaults to 10 seconds if None.
     pub metrics_flush_interval: Option<Duration>,
+    /// Probabilistic trace sampling rate: 1.0 = export all traces, 0.01 = export 1%.
+    /// Sampling is deterministic based on trace_id, so the same trace always gets the
+    /// same decision across services. Metrics are never sampled.
+    /// Defaults to 1.0 (no sampling) if None.
+    pub sampling_rate: Option<f64>,
 }
 
 /// Guard that flushes pending telemetry on drop.
@@ -122,6 +127,7 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
             flush_interval: Duration::from_secs(1),
             max_concurrent_exports: 4,
         });
+        let sampling_rate = config.sampling_rate.unwrap_or(1.0).clamp(0.0, 1.0);
         let layer = if export_traces || export_logs {
             Some(OtlpLayer::new(
                 exp.clone(),
@@ -130,6 +136,7 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
                 config.environment,
                 export_traces,
                 export_logs,
+                sampling_rate,
             ))
         } else {
             None
@@ -294,6 +301,7 @@ mod tests {
             log_to_stderr: false,
             use_metrics_interval: None,
             metrics_flush_interval: None,
+            sampling_rate: None,
         };
     }
 

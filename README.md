@@ -12,6 +12,7 @@ ro11y has two layers:
 - Ships via HTTP POST to any OTLP-compatible collector (Vector, Grafana Alloy, OTEL Collector)
 - Dual output: OTLP HTTP primary + JSON stderr fallback (local dev / CloudWatch)
 - Background exporter with batching (512 items / 1s window), concurrent workers, and 3-retry exponential backoff — telemetry never blocks your application
+- Probabilistic head-based trace sampling — deterministic based on trace_id, so the same trace gets the same decision across services
 - Native OTLP metrics with Counter and Gauge instruments, client-side aggregation, and `ExportMetricsServiceRequest` export
 - Process metrics (CPU, memory) via `/proc` polling on Linux
 
@@ -68,6 +69,7 @@ let _guard = init(TelemetryConfig {
     log_to_stderr: true,
     use_metrics_interval: Some(Duration::from_secs(30)),
     metrics_flush_interval: None, // default 10s
+    sampling_rate: Some(0.1),    // export 10% of traces
 });
 
 // All tracing spans/events are now exported as OTLP protobuf
@@ -89,10 +91,22 @@ let _guard = init(TelemetryConfig {
     log_to_stderr: false,
     use_metrics_interval: None,
     metrics_flush_interval: Some(Duration::from_secs(15)),
+    sampling_rate: Some(0.01), // export 1% of traces
 });
 ```
 
-Set any endpoint to `None` to disable that signal.
+Set any endpoint to `None` to disable that signal. Set `sampling_rate` to `None` or `Some(1.0)` to export all traces (default).
+
+### Sampling
+
+Trace sampling reduces export volume at high scale. The decision is **deterministic based on trace_id** — the same trace always gets the same decision, so sampling is consistent across services sharing a trace.
+
+- `Some(1.0)` or `None` — export all traces (default)
+- `Some(0.1)` — export 10% of traces
+- `Some(0.01)` — export 1% of traces
+- `Some(0.0)` — export no traces
+
+Child spans and log events within a sampled-out trace are also suppressed. Metrics are never sampled — counters and gauges always reflect the full traffic.
 
 ### HTTP middleware (Axum/Tower)
 
@@ -109,7 +123,7 @@ To disable Tower middleware (e.g. for non-HTTP applications):
 
 ```toml
 [dependencies]
-ro11y = { version = "0.3", default-features = false }
+ro11y = { version = "0.4", default-features = false }
 ```
 
 ## Pipeline

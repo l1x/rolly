@@ -26,6 +26,8 @@ pub struct SpanFields {
     pub trace_id: [u8; 16],
     pub span_id: [u8; 8],
     pub(crate) parent_span_id: [u8; 8],
+    /// Whether this span (and its descendants) should be exported.
+    pub(crate) sampled: bool,
 }
 
 // --- Shared visitor ---
@@ -147,6 +149,21 @@ fn level_to_severity(level: &tracing::Level) -> SeverityNumber {
     }
 }
 
+/// Deterministic sampling decision based on trace_id.
+/// Uses the first 8 bytes of trace_id as a u64, maps to [0.0, 1.0) and compares
+/// against the sampling rate. The same trace_id always produces the same decision.
+fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
+    if sampling_rate >= 1.0 {
+        return true;
+    }
+    if sampling_rate <= 0.0 {
+        return false;
+    }
+    let hash = u64::from_le_bytes(trace_id[..8].try_into().unwrap());
+    let normalized = (hash as f64) / (u64::MAX as f64);
+    normalized < sampling_rate
+}
+
 // --- Layer ---
 
 /// Custom tracing Layer that encodes spans/events as OTLP protobuf and sends to Exporter.
@@ -157,6 +174,8 @@ pub(crate) struct OtlpLayer {
     scope_version: String,
     export_traces: bool,
     export_logs: bool,
+    /// Sampling rate: 1.0 = all, 0.0 = none. Deterministic based on trace_id.
+    sampling_rate: f64,
 }
 
 impl OtlpLayer {
@@ -167,6 +186,7 @@ impl OtlpLayer {
         environment: &str,
         export_traces: bool,
         export_logs: bool,
+        sampling_rate: f64,
     ) -> Self {
         let resource_attrs = vec![
             KeyValue {
@@ -189,6 +209,7 @@ impl OtlpLayer {
             scope_version: env!("CARGO_PKG_VERSION").to_string(),
             export_traces,
             export_logs,
+            sampling_rate,
         }
     }
 }
@@ -206,10 +227,18 @@ where
         let span_id = generate_span_id();
         let trace_id = visitor.trace_id.unwrap_or([0u8; 16]);
 
-        let parent_span_id = span
-            .parent()
-            .and_then(|p| p.extensions().get::<SpanFields>().map(|f| f.span_id))
-            .unwrap_or([0u8; 8]);
+        let parent = span.parent();
+        let parent_fields = parent
+            .as_ref()
+            .and_then(|p| p.extensions().get::<SpanFields>().map(|f| (f.span_id, f.sampled)));
+
+        let parent_span_id = parent_fields.map(|(id, _)| id).unwrap_or([0u8; 8]);
+
+        // Inherit sampling decision from parent, or make a new one for root spans.
+        let sampled = match parent_fields {
+            Some((_, parent_sampled)) => parent_sampled,
+            None => should_sample(trace_id, self.sampling_rate),
+        };
 
         let mut ext = span.extensions_mut();
         ext.insert(SpanTiming {
@@ -220,6 +249,7 @@ where
             trace_id,
             span_id,
             parent_span_id,
+            sampled,
         });
     }
 
@@ -241,7 +271,7 @@ where
         let mut visitor = FieldCollector::new();
         event.record(&mut visitor);
 
-        let (trace_id, span_id) = ctx
+        let (trace_id, span_id, sampled) = ctx
             .current_span()
             .id()
             .and_then(|id| {
@@ -249,10 +279,15 @@ where
                     .and_then(|s| {
                         s.extensions()
                             .get::<SpanFields>()
-                            .map(|f| (f.trace_id, f.span_id))
+                            .map(|f| (f.trace_id, f.span_id, f.sampled))
                     })
             })
-            .unwrap_or(([0u8; 16], [0u8; 8]));
+            .unwrap_or(([0u8; 16], [0u8; 8], true));
+
+        // Suppress log events for sampled-out traces
+        if !sampled {
+            return;
+        }
 
         let severity = level_to_severity(event.metadata().level());
         let log = LogData {
@@ -291,6 +326,12 @@ where
                 Some(f) => f,
                 None => return,
             };
+
+            // Sampled-out spans are not exported
+            if !fields.sampled {
+                return;
+            }
+
             (
                 timing.start_nanos,
                 fields.attrs.clone(),
@@ -341,7 +382,7 @@ mod tests {
             flush_interval: std::time::Duration::from_secs(1),
             max_concurrent_exports: 4,
         });
-        let _layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true);
+        let _layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
     }
 
     #[test]
@@ -366,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn layer_captures_span_and_sends_trace_on_close() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -397,7 +438,7 @@ mod tests {
     #[tokio::test]
     async fn layer_captures_event_and_sends_log() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -418,7 +459,7 @@ mod tests {
     #[tokio::test]
     async fn layer_event_inside_span_carries_trace_context() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -454,7 +495,7 @@ mod tests {
     #[tokio::test]
     async fn field_collector_handles_all_types() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -498,7 +539,7 @@ mod tests {
     #[tokio::test]
     async fn parent_span_id_propagated_to_child() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -539,7 +580,7 @@ mod tests {
     #[tokio::test]
     async fn layer_skips_log_export_when_disabled() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, false);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, false, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -567,7 +608,7 @@ mod tests {
     #[tokio::test]
     async fn layer_skips_trace_export_when_disabled() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", false, true);
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", false, true, 1.0);
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -589,5 +630,134 @@ mod tests {
         // No trace message expected
         let extra = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(extra.is_err(), "expected no trace message");
+    }
+
+    // --- Sampling tests ---
+
+    #[test]
+    fn should_sample_rate_1_always_samples() {
+        // All possible trace_ids should be sampled at rate 1.0
+        for i in 0u8..=255 {
+            let mut trace_id = [0u8; 16];
+            trace_id[0] = i;
+            assert!(should_sample(trace_id, 1.0));
+        }
+    }
+
+    #[test]
+    fn should_sample_rate_0_never_samples() {
+        for i in 0u8..=255 {
+            let mut trace_id = [0u8; 16];
+            trace_id[0] = i;
+            assert!(!should_sample(trace_id, 0.0));
+        }
+    }
+
+    #[test]
+    fn should_sample_is_deterministic() {
+        let trace_id = [0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0, 0];
+        let result1 = should_sample(trace_id, 0.5);
+        let result2 = should_sample(trace_id, 0.5);
+        assert_eq!(result1, result2, "same trace_id must produce same decision");
+    }
+
+    #[test]
+    fn should_sample_respects_rate_approximately() {
+        // Generate 10000 distinct trace_ids using BLAKE3 for uniform distribution
+        let mut sampled = 0u64;
+        let total = 10_000u64;
+        for i in 0..total {
+            let hash = blake3::hash(&i.to_le_bytes());
+            let mut trace_id = [0u8; 16];
+            trace_id.copy_from_slice(&hash.as_bytes()[..16]);
+            if should_sample(trace_id, 0.5) {
+                sampled += 1;
+            }
+        }
+        let ratio = sampled as f64 / total as f64;
+        assert!(
+            (0.45..=0.55).contains(&ratio),
+            "expected ~50% sampled, got {:.1}%",
+            ratio * 100.0
+        );
+    }
+
+    #[tokio::test]
+    async fn sampling_rate_zero_drops_all_traces_and_logs() {
+        let (exporter, mut rx) = Exporter::start_test();
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 0.0);
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        {
+            let span = tracing::info_span!("sampled-out-span");
+            let _enter = span.enter();
+            tracing::info!("sampled-out-log");
+        }
+
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(result.is_err(), "expected no messages when sampling_rate=0.0");
+    }
+
+    #[tokio::test]
+    async fn sampling_rate_one_exports_all() {
+        let (exporter, mut rx) = Exporter::start_test();
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let trace_id_hex = "0102030405060708090a0b0c0d0e0f10";
+        {
+            let span = tracing::info_span!("sampled-in-span", trace_id = trace_id_hex);
+            let _enter = span.enter();
+            tracing::info!("sampled-in-log");
+        }
+
+        // Should get log then trace
+        let msg1 = rx.recv().await.expect("should receive log");
+        assert!(matches!(msg1, ExportMessage::Logs(_)));
+
+        let msg2 = rx.recv().await.expect("should receive trace");
+        assert!(matches!(msg2, ExportMessage::Traces(_)));
+    }
+
+    #[tokio::test]
+    async fn child_spans_inherit_parent_sampling_decision() {
+        let (exporter, mut rx) = Exporter::start_test();
+        // Rate 0.0: nothing should be exported
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 0.0);
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        {
+            let parent = tracing::info_span!("parent");
+            let _p = parent.enter();
+            {
+                let child = tracing::info_span!("child");
+                let _c = child.enter();
+                tracing::info!("child-event");
+            }
+        }
+
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(
+            result.is_err(),
+            "child spans and events should inherit parent's sampled-out decision"
+        );
+    }
+
+    #[tokio::test]
+    async fn events_outside_spans_are_exported_regardless_of_sampling() {
+        let (exporter, mut rx) = Exporter::start_test();
+        // Even at rate 0.0, events outside any span have no sampling context
+        // and default to sampled=true
+        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 0.0);
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        tracing::info!("standalone-log");
+
+        let msg = rx.recv().await.expect("standalone event should be exported");
+        assert!(matches!(msg, ExportMessage::Logs(_)));
     }
 }

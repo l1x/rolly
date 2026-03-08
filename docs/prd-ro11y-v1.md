@@ -148,4 +148,5 @@ Implementing `ExportMetricsServiceRequest` requires:
 | **v0.1.x** | Core OTLP traces + logs, Tower middleware, hand-rolled protobuf. |
 | **v0.2.0** | **Batching & Concurrency:** Buffer items before export; parallel HTTP workers. **PII Scrubbing.** |
 | **v0.3.0** | **Native OTLP Metrics:** `ExportMetricsServiceRequest`, Counter + Gauge instruments. |
-| **v1.0.0** | **Sampling & Stability:** Probabilistic trace sampling, stable API, battle-tested at 2B+ req/month. |
+| **v0.4.0** | **Trace Sampling:** Deterministic head-based probabilistic sampling via trace_id. |
+| **v1.0.0** | **Stability:** Stable API, battle-tested at 2B+ req/month. |

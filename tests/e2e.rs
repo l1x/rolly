@@ -83,6 +83,7 @@ async fn init_creates_spans_that_arrive_as_otlp_protobuf() {
         log_to_stderr: false,
         use_metrics_interval: None,
         metrics_flush_interval: None,
+        sampling_rate: None,
     });
 
     // Create a span with a known trace_id
