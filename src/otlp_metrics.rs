@@ -93,10 +93,64 @@ fn encode_gauge_msg(
     }
 }
 
+/// Encode a HistogramDataPoint.
+///
+/// HistogramDataPoint fields:
+///   start_time_unix_nano(2), time_unix_nano(3), count(4), sum(5),
+///   bucket_counts(6), explicit_bounds(7), attributes(9), min(11), max(12)
+fn encode_histogram_data_point(
+    buf: &mut Vec<u8>,
+    dp: &crate::metrics::HistogramDataPoint,
+    boundaries: &[f64],
+    start_time_unix_nano: u64,
+    time_unix_nano: u64,
+) {
+    encode_fixed64_field(buf, 2, start_time_unix_nano);
+    encode_fixed64_field(buf, 3, time_unix_nano);
+    // count: field 4, fixed64 — always encode
+    encode_fixed64_field_always(buf, 4, dp.count);
+    // sum: field 5, double as fixed64 bits — always encode
+    encode_fixed64_field_always(buf, 5, dp.sum.to_bits());
+    // bucket_counts: field 6, packed repeated fixed64
+    encode_packed_fixed64_field(buf, 6, &dp.bucket_counts);
+    // explicit_bounds: field 7, packed repeated double
+    encode_packed_double_field(buf, 7, boundaries);
+    // attributes: field 9, repeated KeyValue
+    for (k, v) in &dp.attrs {
+        encode_message_field_in_place(buf, 9, |buf| {
+            encode_attr_key_value(buf, k, v);
+        });
+    }
+    // min: field 11, double as fixed64 bits — always encode
+    encode_fixed64_field_always(buf, 11, dp.min.to_bits());
+    // max: field 12, double as fixed64 bits — always encode
+    encode_fixed64_field_always(buf, 12, dp.max.to_bits());
+}
+
+/// Encode a Histogram message (field 9 of Metric).
+///
+/// Histogram fields:
+///   data_points(1), aggregation_temporality(2)
+fn encode_histogram_msg(
+    buf: &mut Vec<u8>,
+    data_points: &[crate::metrics::HistogramDataPoint],
+    boundaries: &[f64],
+    start_time: u64,
+    time: u64,
+) {
+    for dp in data_points {
+        encode_message_field_in_place(buf, 1, |buf| {
+            encode_histogram_data_point(buf, dp, boundaries, start_time, time);
+        });
+    }
+    // CUMULATIVE = 2
+    encode_varint_field(buf, 2, 2);
+}
+
 /// Encode a single Metric message.
 ///
 /// Metric fields:
-///   name(1), description(2), unit(3), gauge(5), sum(7)
+///   name(1), description(2), unit(3), gauge(5), sum(7), histogram(9)
 fn encode_metric(buf: &mut Vec<u8>, snapshot: &MetricSnapshot, start_time: u64, time: u64) {
     match snapshot {
         MetricSnapshot::Counter {
@@ -106,7 +160,6 @@ fn encode_metric(buf: &mut Vec<u8>, snapshot: &MetricSnapshot, start_time: u64, 
         } => {
             encode_string_field(buf, 1, name);
             encode_string_field(buf, 2, description);
-            // unit (field 3) — empty, skip
             // Sum (field 7)
             encode_message_field_in_place(buf, 7, |buf| {
                 encode_sum(buf, data_points, start_time, time);
@@ -122,6 +175,19 @@ fn encode_metric(buf: &mut Vec<u8>, snapshot: &MetricSnapshot, start_time: u64, 
             // Gauge (field 5)
             encode_message_field_in_place(buf, 5, |buf| {
                 encode_gauge_msg(buf, data_points, start_time, time);
+            });
+        }
+        MetricSnapshot::Histogram {
+            name,
+            description,
+            boundaries,
+            data_points,
+        } => {
+            encode_string_field(buf, 1, name);
+            encode_string_field(buf, 2, description);
+            // Histogram (field 9)
+            encode_message_field_in_place(buf, 9, |buf| {
+                encode_histogram_msg(buf, data_points, boundaries, start_time, time);
             });
         }
     }
@@ -328,6 +394,149 @@ mod tests {
 
         assert!(bytes.windows(8).any(|w| w == b"requests"));
         assert!(bytes.windows(11).any(|w| w == b"temperature"));
+    }
+
+    #[test]
+    fn encode_histogram_metric_is_nonempty() {
+        let snapshots = vec![MetricSnapshot::Histogram {
+            name: "request_duration".to_string(),
+            description: "Request duration histogram".to_string(),
+            boundaries: vec![10.0, 50.0, 100.0],
+            data_points: vec![crate::metrics::HistogramDataPoint {
+                attrs: vec![("method".to_string(), "GET".to_string())],
+                bucket_counts: vec![5, 10, 3, 2],
+                sum: 1234.5,
+                count: 20,
+                min: 1.0,
+                max: 250.0,
+            }],
+        }];
+
+        let bytes = encode_export_metrics_request(
+            &[KeyValue {
+                key: "service.name".to_string(),
+                value: crate::otlp_trace::AnyValue::String("test-svc".to_string()),
+            }],
+            "ro11y",
+            "0.3.0",
+            &snapshots,
+            1_000_000_000,
+            2_000_000_000,
+        );
+
+        assert!(!bytes.is_empty());
+        let name = b"request_duration";
+        assert!(
+            bytes.windows(name.len()).any(|w| w == name),
+            "metric name not found in encoded bytes"
+        );
+    }
+
+    #[test]
+    fn encode_histogram_has_cumulative_temporality() {
+        let snapshots = vec![MetricSnapshot::Histogram {
+            name: "h".to_string(),
+            description: String::new(),
+            boundaries: vec![10.0],
+            data_points: vec![crate::metrics::HistogramDataPoint {
+                attrs: vec![],
+                bucket_counts: vec![1, 0],
+                sum: 5.0,
+                count: 1,
+                min: 5.0,
+                max: 5.0,
+            }],
+        }];
+
+        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+
+        // aggregation_temporality = 2 (CUMULATIVE): tag = 0x10, value = 0x02
+        assert!(
+            bytes.windows(2).any(|w| w == [0x10, 0x02]),
+            "CUMULATIVE temporality not found"
+        );
+    }
+
+    #[test]
+    fn encode_histogram_bucket_counts_present() {
+        let snapshots = vec![MetricSnapshot::Histogram {
+            name: "h".to_string(),
+            description: String::new(),
+            boundaries: vec![10.0],
+            data_points: vec![crate::metrics::HistogramDataPoint {
+                attrs: vec![],
+                bucket_counts: vec![3, 7],
+                sum: 100.0,
+                count: 10,
+                min: 1.0,
+                max: 50.0,
+            }],
+        }];
+
+        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+
+        // bucket_counts contains 3 and 7 as fixed64 LE
+        let val3 = 3u64.to_le_bytes();
+        let val7 = 7u64.to_le_bytes();
+        assert!(bytes.windows(8).any(|w| w == val3));
+        assert!(bytes.windows(8).any(|w| w == val7));
+    }
+
+    #[test]
+    fn encode_histogram_attributes_present() {
+        let snapshots = vec![MetricSnapshot::Histogram {
+            name: "h".to_string(),
+            description: String::new(),
+            boundaries: vec![10.0],
+            data_points: vec![crate::metrics::HistogramDataPoint {
+                attrs: vec![("method".to_string(), "GET".to_string())],
+                bucket_counts: vec![1, 0],
+                sum: 5.0,
+                count: 1,
+                min: 5.0,
+                max: 5.0,
+            }],
+        }];
+
+        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+
+        assert!(bytes.windows(6).any(|w| w == b"method"));
+        assert!(bytes.windows(3).any(|w| w == b"GET"));
+    }
+
+    #[test]
+    fn encode_mixed_counter_gauge_histogram() {
+        let snapshots = vec![
+            MetricSnapshot::Counter {
+                name: "requests".to_string(),
+                description: String::new(),
+                data_points: vec![(vec![], 100)],
+            },
+            MetricSnapshot::Gauge {
+                name: "temperature".to_string(),
+                description: String::new(),
+                data_points: vec![(vec![], 36.6)],
+            },
+            MetricSnapshot::Histogram {
+                name: "latency".to_string(),
+                description: String::new(),
+                boundaries: vec![10.0],
+                data_points: vec![crate::metrics::HistogramDataPoint {
+                    attrs: vec![],
+                    bucket_counts: vec![1, 1],
+                    sum: 15.0,
+                    count: 2,
+                    min: 5.0,
+                    max: 10.0,
+                }],
+            },
+        ];
+
+        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+
+        assert!(bytes.windows(8).any(|w| w == b"requests"));
+        assert!(bytes.windows(11).any(|w| w == b"temperature"));
+        assert!(bytes.windows(7).any(|w| w == b"latency"));
     }
 
     #[test]

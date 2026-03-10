@@ -16,7 +16,7 @@ pub use tower::propagation::PropagationLayer;
 #[cfg(feature = "tower")]
 pub use tower::request::CfRequestIdLayer;
 
-pub use metrics::{counter, gauge, Counter, Gauge};
+pub use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
 
 use std::time::Duration;
 
@@ -274,7 +274,8 @@ pub fn propagation_layer() -> PropagationLayer {
 pub mod bench {
     pub use crate::exporter::{Exporter, ExporterConfig};
     pub use crate::metrics::{
-        counter, gauge, global_registry, Counter, Gauge, MetricSnapshot, MetricsRegistry,
+        counter, gauge, global_registry, histogram, Counter, Gauge, Histogram,
+        HistogramDataPoint, MetricSnapshot, MetricsRegistry,
     };
     pub fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
         crate::otlp_layer::should_sample(trace_id, sampling_rate)

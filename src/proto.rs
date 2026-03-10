@@ -70,6 +70,32 @@ pub(crate) fn encode_fixed64_field_always(buf: &mut Vec<u8>, field: u32, val: u6
     buf.extend_from_slice(&val.to_le_bytes());
 }
 
+/// Encode a packed repeated fixed64 field (tag + length + concatenated 8-byte LE values).
+/// Skips the field if the slice is empty.
+pub(crate) fn encode_packed_fixed64_field(buf: &mut Vec<u8>, field: u32, values: &[u64]) {
+    if values.is_empty() {
+        return;
+    }
+    encode_tag(buf, field, WIRE_TYPE_LENGTH_DELIMITED);
+    encode_varint(buf, (values.len() * 8) as u64);
+    for &v in values {
+        buf.extend_from_slice(&v.to_le_bytes());
+    }
+}
+
+/// Encode a packed repeated double field (tag + length + concatenated 8-byte LE values).
+/// Skips the field if the slice is empty.
+pub(crate) fn encode_packed_double_field(buf: &mut Vec<u8>, field: u32, values: &[f64]) {
+    if values.is_empty() {
+        return;
+    }
+    encode_tag(buf, field, WIRE_TYPE_LENGTH_DELIMITED);
+    encode_varint(buf, (values.len() * 8) as u64);
+    for &v in values {
+        buf.extend_from_slice(&v.to_bits().to_le_bytes());
+    }
+}
+
 /// Encode a nested message field (tag + length + message bytes).
 /// Skips the field if the message is empty.
 #[cfg(any(test, feature = "_bench"))]
@@ -270,6 +296,46 @@ mod tests {
     }
 
     #[test]
+    fn packed_fixed64_encoding() {
+        let mut buf = Vec::new();
+        encode_packed_fixed64_field(&mut buf, 6, &[1, 2, 3]);
+        // tag = (6<<3)|2 = 0x32, length = 24 = 0x18
+        assert_eq!(buf[0], 0x32);
+        assert_eq!(buf[1], 0x18);
+        assert_eq!(buf.len(), 2 + 24);
+        // First value: 1 as LE fixed64
+        assert_eq!(&buf[2..10], &1u64.to_le_bytes());
+        assert_eq!(&buf[10..18], &2u64.to_le_bytes());
+        assert_eq!(&buf[18..26], &3u64.to_le_bytes());
+    }
+
+    #[test]
+    fn packed_fixed64_empty_is_skipped() {
+        let mut buf = Vec::new();
+        encode_packed_fixed64_field(&mut buf, 6, &[]);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn packed_double_encoding() {
+        let mut buf = Vec::new();
+        encode_packed_double_field(&mut buf, 7, &[1.0, 2.5]);
+        // tag = (7<<3)|2 = 0x3A, length = 16 = 0x10
+        assert_eq!(buf[0], 0x3A);
+        assert_eq!(buf[1], 0x10);
+        assert_eq!(buf.len(), 2 + 16);
+        assert_eq!(&buf[2..10], &1.0f64.to_bits().to_le_bytes());
+        assert_eq!(&buf[10..18], &2.5f64.to_bits().to_le_bytes());
+    }
+
+    #[test]
+    fn packed_double_empty_is_skipped() {
+        let mut buf = Vec::new();
+        encode_packed_double_field(&mut buf, 7, &[]);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
     fn encode_message_field_in_place_matches_original() {
         // Build with original approach
         let mut inner = Vec::new();
@@ -414,6 +480,22 @@ mod kani_proofs {
         let mut out = [0u8; 5];
         let n = encode_varint_to_slice(&mut out, val);
         assert!(n >= 1 && n <= 5);
+    }
+
+    #[kani::proof]
+    fn encode_packed_fixed64_empty_noop() {
+        let field: u32 = kani::any();
+        let mut buf = Vec::new();
+        encode_packed_fixed64_field(&mut buf, field, &[]);
+        assert!(buf.is_empty());
+    }
+
+    #[kani::proof]
+    fn encode_packed_double_empty_noop() {
+        let field: u32 = kani::any();
+        let mut buf = Vec::new();
+        encode_packed_double_field(&mut buf, field, &[]);
+        assert!(buf.is_empty());
     }
 
     #[kani::proof]

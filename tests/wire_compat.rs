@@ -11,8 +11,8 @@ use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 
 use ro11y::bench::{
     encode_export_logs_request, encode_export_metrics_request, encode_export_trace_request,
-    AnyValue, KeyValue, LogData, MetricSnapshot, SeverityNumber, SpanData, SpanKind, SpanStatus,
-    StatusCode,
+    AnyValue, HistogramDataPoint, KeyValue, LogData, MetricSnapshot, SeverityNumber, SpanData,
+    SpanKind, SpanStatus, StatusCode,
 };
 
 // ---------------------------------------------------------------------------
@@ -400,6 +400,104 @@ fn gauge_metric_decodes_via_prost() {
 }
 
 #[test]
+fn histogram_metric_decodes_via_prost() {
+    let snapshots = vec![MetricSnapshot::Histogram {
+        name: "request_duration_ms".into(),
+        description: "Request duration in milliseconds".into(),
+        boundaries: vec![10.0, 50.0, 100.0, 500.0],
+        data_points: vec![HistogramDataPoint {
+            attrs: vec![
+                ("method".into(), "GET".into()),
+                ("path".into(), "/api".into()),
+            ],
+            bucket_counts: vec![5, 15, 8, 3, 1],
+            sum: 2345.6,
+            count: 32,
+            min: 2.1,
+            max: 750.0,
+        }],
+    }];
+
+    let bytes = encode_export_metrics_request(
+        &resource_attrs(),
+        "ro11y",
+        "1.0.0",
+        &snapshots,
+        1_000_000_000,
+        2_000_000_000,
+    );
+    let req = ExportMetricsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
+
+    let m = &req.resource_metrics[0].scope_metrics[0].metrics[0];
+    assert_eq!(m.name, "request_duration_ms");
+    assert_eq!(m.description, "Request duration in milliseconds");
+
+    match m.data.as_ref().unwrap() {
+        opentelemetry_proto::tonic::metrics::v1::metric::Data::Histogram(h) => {
+            assert_eq!(h.aggregation_temporality, 2); // CUMULATIVE
+            assert_eq!(h.data_points.len(), 1);
+
+            let dp = &h.data_points[0];
+            assert_eq!(dp.count, 32);
+            assert!((dp.sum.unwrap() - 2345.6).abs() < f64::EPSILON);
+            assert_eq!(dp.bucket_counts, vec![5, 15, 8, 3, 1]);
+            assert_eq!(dp.explicit_bounds, vec![10.0, 50.0, 100.0, 500.0]);
+            assert!((dp.min.unwrap() - 2.1).abs() < f64::EPSILON);
+            assert!((dp.max.unwrap() - 750.0).abs() < f64::EPSILON);
+
+            // Attributes
+            assert_eq!(dp.attributes.len(), 2);
+            let attr_keys: Vec<&str> = dp.attributes.iter().map(|a| a.key.as_str()).collect();
+            assert!(attr_keys.contains(&"method"));
+            assert!(attr_keys.contains(&"path"));
+        }
+        other => panic!("expected Histogram, got {:?}", other),
+    }
+}
+
+#[test]
+fn histogram_multiple_data_points_decode() {
+    let snapshots = vec![MetricSnapshot::Histogram {
+        name: "latency".into(),
+        description: String::new(),
+        boundaries: vec![10.0, 100.0],
+        data_points: vec![
+            HistogramDataPoint {
+                attrs: vec![("method".into(), "GET".into())],
+                bucket_counts: vec![5, 3, 1],
+                sum: 200.0,
+                count: 9,
+                min: 1.0,
+                max: 150.0,
+            },
+            HistogramDataPoint {
+                attrs: vec![("method".into(), "POST".into())],
+                bucket_counts: vec![2, 8, 0],
+                sum: 450.0,
+                count: 10,
+                min: 3.0,
+                max: 95.0,
+            },
+        ],
+    }];
+
+    let bytes =
+        encode_export_metrics_request(&resource_attrs(), "ro11y", "1.0.0", &snapshots, 0, 0);
+    let req = ExportMetricsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
+
+    match req.resource_metrics[0].scope_metrics[0].metrics[0]
+        .data
+        .as_ref()
+        .unwrap()
+    {
+        opentelemetry_proto::tonic::metrics::v1::metric::Data::Histogram(h) => {
+            assert_eq!(h.data_points.len(), 2);
+        }
+        other => panic!("expected Histogram, got {:?}", other),
+    }
+}
+
+#[test]
 fn mixed_metrics_decode() {
     let snapshots = vec![
         MetricSnapshot::Counter {
@@ -412,6 +510,19 @@ fn mixed_metrics_decode() {
             description: String::new(),
             data_points: vec![(vec![], 36.6)],
         },
+        MetricSnapshot::Histogram {
+            name: "latency".into(),
+            description: String::new(),
+            boundaries: vec![10.0],
+            data_points: vec![HistogramDataPoint {
+                attrs: vec![],
+                bucket_counts: vec![1, 1],
+                sum: 15.0,
+                count: 2,
+                min: 5.0,
+                max: 10.0,
+            }],
+        },
     ];
 
     let bytes =
@@ -419,11 +530,12 @@ fn mixed_metrics_decode() {
     let req = ExportMetricsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     let metrics = &req.resource_metrics[0].scope_metrics[0].metrics;
-    assert_eq!(metrics.len(), 2);
+    assert_eq!(metrics.len(), 3);
 
     let names: Vec<&str> = metrics.iter().map(|m| m.name.as_str()).collect();
     assert!(names.contains(&"requests"));
     assert!(names.contains(&"temperature"));
+    assert!(names.contains(&"latency"));
 
     // Verify types
     for m in metrics {
@@ -435,6 +547,10 @@ fn mixed_metrics_decode() {
             "temperature" => assert!(matches!(
                 m.data,
                 Some(opentelemetry_proto::tonic::metrics::v1::metric::Data::Gauge(_))
+            )),
+            "latency" => assert!(matches!(
+                m.data,
+                Some(opentelemetry_proto::tonic::metrics::v1::metric::Data::Histogram(_))
             )),
             other => panic!("unexpected metric: {}", other),
         }

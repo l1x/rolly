@@ -10,6 +10,16 @@ pub fn global_registry() -> &'static MetricsRegistry {
     GLOBAL_REGISTRY.get_or_init(MetricsRegistry::new)
 }
 
+/// Snapshot of a single histogram data point.
+pub struct HistogramDataPoint {
+    pub attrs: Vec<(String, String)>,
+    pub bucket_counts: Vec<u64>,
+    pub sum: f64,
+    pub count: u64,
+    pub min: f64,
+    pub max: f64,
+}
+
 /// A snapshot of a single metric for encoding.
 pub enum MetricSnapshot {
     Counter {
@@ -24,12 +34,19 @@ pub enum MetricSnapshot {
         /// Each entry: (sorted attribute pairs, last value)
         data_points: Vec<(Vec<(String, String)>, f64)>,
     },
+    Histogram {
+        name: String,
+        description: String,
+        boundaries: Vec<f64>,
+        data_points: Vec<HistogramDataPoint>,
+    },
 }
 
-/// Central registry holding all counters and gauges.
+/// Central registry holding all counters, gauges, and histograms.
 pub struct MetricsRegistry {
     counters: RwLock<HashMap<String, Counter>>,
     gauges: RwLock<HashMap<String, Gauge>>,
+    histograms: RwLock<HashMap<String, Histogram>>,
 }
 
 impl MetricsRegistry {
@@ -37,6 +54,7 @@ impl MetricsRegistry {
         Self {
             counters: RwLock::new(HashMap::new()),
             gauges: RwLock::new(HashMap::new()),
+            histograms: RwLock::new(HashMap::new()),
         }
     }
 
@@ -86,6 +104,34 @@ impl MetricsRegistry {
             .clone()
     }
 
+    /// Get or create a histogram by name.
+    /// Boundaries are sorted and deduplicated at creation time.
+    pub fn histogram(&self, name: &str, description: &str, boundaries: &[f64]) -> Histogram {
+        // Fast path: read lock
+        {
+            let histograms = self.histograms.read().unwrap();
+            if let Some(h) = histograms.get(name) {
+                return h.clone();
+            }
+        }
+        // Slow path: write lock
+        let mut sorted = boundaries.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.dedup();
+        let mut histograms = self.histograms.write().unwrap();
+        histograms
+            .entry(name.to_string())
+            .or_insert_with(|| Histogram {
+                inner: Arc::new(HistogramInner {
+                    name: name.to_string(),
+                    description: description.to_string(),
+                    boundaries: sorted,
+                    data: Mutex::new(HashMap::new()),
+                }),
+            })
+            .clone()
+    }
+
     /// Snapshot all metrics for encoding. Does not reset counters (cumulative).
     pub fn collect(&self) -> Vec<MetricSnapshot> {
         let mut snapshots = Vec::new();
@@ -117,6 +163,33 @@ impl MetricsRegistry {
                 snapshots.push(MetricSnapshot::Gauge {
                     name: gauge.inner.name.clone(),
                     description: gauge.inner.description.clone(),
+                    data_points,
+                });
+            }
+        }
+
+        {
+            let histograms = self.histograms.read().unwrap();
+            for histogram in histograms.values() {
+                let data = histogram.inner.data.lock().unwrap();
+                if data.is_empty() {
+                    continue;
+                }
+                let data_points: Vec<_> = data
+                    .values()
+                    .map(|(attrs, state)| HistogramDataPoint {
+                        attrs: attrs.clone(),
+                        bucket_counts: state.bucket_counts.clone(),
+                        sum: state.sum,
+                        count: state.count,
+                        min: state.min,
+                        max: state.max,
+                    })
+                    .collect();
+                snapshots.push(MetricSnapshot::Histogram {
+                    name: histogram.inner.name.clone(),
+                    description: histogram.inner.description.clone(),
+                    boundaries: histogram.inner.boundaries.clone(),
                     data_points,
                 });
             }
@@ -204,6 +277,66 @@ impl Gauge {
     }
 }
 
+// --- Histogram ---
+
+struct HistogramState {
+    bucket_counts: Vec<u64>,
+    sum: f64,
+    count: u64,
+    min: f64,
+    max: f64,
+}
+
+struct HistogramInner {
+    name: String,
+    description: String,
+    boundaries: Vec<f64>,
+    /// Key: hash of sorted attribute pairs. Value: (owned attrs, state).
+    data: Mutex<HashMap<u64, (Vec<(String, String)>, HistogramState)>>,
+}
+
+/// A histogram with client-side bucketing. Clone is cheap (Arc).
+#[derive(Clone)]
+pub struct Histogram {
+    inner: Arc<HistogramInner>,
+}
+
+impl Histogram {
+    /// Record an observed value for the given attribute set.
+    pub fn observe(&self, value: f64, attrs: &[(&str, &str)]) {
+        let bucket_idx = self
+            .inner
+            .boundaries
+            .partition_point(|&b| b <= value);
+        let mut sorted = attrs.to_vec();
+        sorted.sort();
+        let key = attrs_hash(&sorted);
+        let mut data = self.inner.data.lock().unwrap();
+        let entry = data.entry(key).or_insert_with(|| {
+            let num_buckets = self.inner.boundaries.len() + 1;
+            (
+                owned_attrs(&sorted),
+                HistogramState {
+                    bucket_counts: vec![0; num_buckets],
+                    sum: 0.0,
+                    count: 0,
+                    min: f64::INFINITY,
+                    max: f64::NEG_INFINITY,
+                },
+            )
+        });
+        entry.1.bucket_counts[bucket_idx] += 1;
+        entry.1.sum += value;
+        entry.1.count += 1;
+        if value < entry.1.min {
+            entry.1.min = value;
+        }
+        if value > entry.1.max {
+            entry.1.max = value;
+        }
+    }
+}
+
 // --- Public API ---
 
 /// Get or create a named counter from the global registry.
@@ -214,6 +347,11 @@ pub fn counter(name: &str, description: &str) -> Counter {
 /// Get or create a named gauge from the global registry.
 pub fn gauge(name: &str, description: &str) -> Gauge {
     global_registry().gauge(name, description)
+}
+
+/// Get or create a named histogram from the global registry.
+pub fn histogram(name: &str, description: &str, boundaries: &[f64]) -> Histogram {
+    global_registry().histogram(name, description, boundaries)
 }
 
 #[cfg(test)]
@@ -326,6 +464,116 @@ mod tests {
                 assert_eq!(data_points[0].1, 2);
             }
             _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn histogram_observe_accumulates() {
+        let registry = MetricsRegistry::new();
+        let h = registry.histogram("latency", "request latency", &[10.0, 50.0, 100.0]);
+        h.observe(5.0, &[("method", "GET")]);
+        h.observe(25.0, &[("method", "GET")]);
+        h.observe(75.0, &[("method", "GET")]);
+        h.observe(200.0, &[("method", "GET")]);
+
+        let snapshots = registry.collect();
+        assert_eq!(snapshots.len(), 1);
+        match &snapshots[0] {
+            MetricSnapshot::Histogram {
+                name,
+                boundaries,
+                data_points,
+                ..
+            } => {
+                assert_eq!(name, "latency");
+                assert_eq!(boundaries, &[10.0, 50.0, 100.0]);
+                assert_eq!(data_points.len(), 1);
+                let dp = &data_points[0];
+                // 4 buckets: [0,10), [10,50), [50,100), [100,+inf)
+                assert_eq!(dp.bucket_counts, vec![1, 1, 1, 1]);
+                assert_eq!(dp.count, 4);
+                assert!((dp.sum - 305.0).abs() < f64::EPSILON);
+                assert!((dp.min - 5.0).abs() < f64::EPSILON);
+                assert!((dp.max - 200.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("expected Histogram snapshot"),
+        }
+    }
+
+    #[test]
+    fn histogram_boundary_placement() {
+        let registry = MetricsRegistry::new();
+        let h = registry.histogram("bp", "test", &[10.0, 20.0]);
+        // Exactly on boundary goes to the next bucket
+        h.observe(10.0, &[]);
+        h.observe(20.0, &[]);
+        h.observe(0.0, &[]);
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Histogram { data_points, .. } => {
+                let dp = &data_points[0];
+                // [0,10) = 1 (0.0), [10,20) = 1 (10.0), [20,+inf) = 1 (20.0)
+                assert_eq!(dp.bucket_counts, vec![1, 1, 1]);
+            }
+            _ => panic!("expected Histogram"),
+        }
+    }
+
+    #[test]
+    fn histogram_multiple_attr_sets() {
+        let registry = MetricsRegistry::new();
+        let h = registry.histogram("multi", "test", &[50.0]);
+        h.observe(10.0, &[("method", "GET")]);
+        h.observe(60.0, &[("method", "POST")]);
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Histogram { data_points, .. } => {
+                assert_eq!(data_points.len(), 2);
+            }
+            _ => panic!("expected Histogram"),
+        }
+    }
+
+    #[test]
+    fn histogram_clone_shares_state() {
+        let registry = MetricsRegistry::new();
+        let h1 = registry.histogram("shared_h", "test", &[10.0]);
+        let h2 = h1.clone();
+        h1.observe(5.0, &[]);
+        h2.observe(15.0, &[]);
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Histogram { data_points, .. } => {
+                let dp = &data_points[0];
+                assert_eq!(dp.count, 2);
+            }
+            _ => panic!("expected Histogram"),
+        }
+    }
+
+    #[test]
+    fn histogram_empty_not_collected() {
+        let registry = MetricsRegistry::new();
+        let _ = registry.histogram("unused_h", "test", &[10.0]);
+        assert!(registry.collect().is_empty());
+    }
+
+    #[test]
+    fn histogram_no_attrs() {
+        let registry = MetricsRegistry::new();
+        let h = registry.histogram("no_attrs_h", "test", &[5.0]);
+        h.observe(1.0, &[]);
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Histogram { data_points, .. } => {
+                assert_eq!(data_points.len(), 1);
+                assert!(data_points[0].attrs.is_empty());
+            }
+            _ => panic!("expected Histogram"),
         }
     }
 }

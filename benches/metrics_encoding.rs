@@ -55,6 +55,30 @@ fn make_gauge_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<MetricSna
         .collect()
 }
 
+fn make_histogram_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<MetricSnapshot> {
+    let boundaries = vec![5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0];
+    (0..n_metrics)
+        .map(|i| MetricSnapshot::Histogram {
+            name: format!("request_duration_{}", i),
+            description: format!("Request duration {}", i),
+            boundaries: boundaries.clone(),
+            data_points: (0..n_data_points)
+                .map(|j| HistogramDataPoint {
+                    attrs: vec![
+                        ("method".to_string(), format!("M{}", j % 4)),
+                        ("status".to_string(), format!("{}", 200 + j % 5)),
+                    ],
+                    bucket_counts: vec![10, 20, 30, 25, 15, 8, 3, 1, 0],
+                    sum: 5000.0 + j as f64 * 100.0,
+                    count: 112,
+                    min: 0.5,
+                    max: 850.0,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn bench_encode_metrics_request(c: &mut Criterion) {
     let mut group = c.benchmark_group("encode_export_metrics_request");
     let attrs = resource_attrs();
@@ -141,6 +165,84 @@ fn bench_encode_gauge_request(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_encode_histogram_request(c: &mut Criterion) {
+    let mut group = c.benchmark_group("encode_histogram_metrics");
+    let attrs = resource_attrs();
+
+    let snap_1h_1dp = make_histogram_snapshots(1, 1);
+    let snap_1h_10dp = make_histogram_snapshots(1, 10);
+    let snap_10h_10dp = make_histogram_snapshots(10, 10);
+
+    group.bench_function("1_histogram_1_dp", |b| {
+        b.iter(|| {
+            black_box(encode_export_metrics_request(
+                black_box(&attrs),
+                "ro11y",
+                "0.3.0",
+                black_box(&snap_1h_1dp),
+                1_700_000_000_000_000_000,
+                1_700_000_010_000_000_000,
+            ));
+        });
+    });
+
+    group.bench_function("1_histogram_10_dp", |b| {
+        b.iter(|| {
+            black_box(encode_export_metrics_request(
+                black_box(&attrs),
+                "ro11y",
+                "0.3.0",
+                black_box(&snap_1h_10dp),
+                1_700_000_000_000_000_000,
+                1_700_000_010_000_000_000,
+            ));
+        });
+    });
+
+    group.bench_function("10_histograms_10_dp", |b| {
+        b.iter(|| {
+            black_box(encode_export_metrics_request(
+                black_box(&attrs),
+                "ro11y",
+                "0.3.0",
+                black_box(&snap_10h_10dp),
+                1_700_000_000_000_000_000,
+                1_700_000_010_000_000_000,
+            ));
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_histogram_observe(c: &mut Criterion) {
+    let mut group = c.benchmark_group("histogram_observe");
+
+    let registry = MetricsRegistry::new();
+    let h = registry.histogram(
+        "bench_histogram",
+        "benchmark histogram",
+        &[5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0],
+    );
+
+    group.bench_function("no_attrs", |b| {
+        b.iter(|| {
+            h.observe(black_box(42.5), black_box(&[]));
+        });
+    });
+
+    group.bench_function("2_attrs", |b| {
+        b.iter(|| {
+            h.observe(
+                black_box(42.5),
+                black_box(&[("method", "GET"), ("status", "200")]),
+            );
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_counter_add(c: &mut Criterion) {
     let mut group = c.benchmark_group("counter_add");
 
@@ -216,7 +318,7 @@ fn bench_collect(c: &mut Criterion) {
         }
     }
 
-    // Large registry: 50 counters + 20 gauges, 10 label sets each
+    // Large registry: 50 counters + 20 gauges + 10 histograms, 10 label sets each
     let registry_large = MetricsRegistry::new();
     for i in 0..50 {
         let ctr = registry_large.counter(&format!("counter_{}", i), "bench");
@@ -230,6 +332,13 @@ fn bench_collect(c: &mut Criterion) {
             g.set(j as f64, &[("key", &format!("val{}", j))]);
         }
     }
+    let hist_boundaries = &[5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0];
+    for i in 0..10 {
+        let h = registry_large.histogram(&format!("histogram_{}", i), "bench", hist_boundaries);
+        for j in 0..10 {
+            h.observe(j as f64 * 10.0, &[("key", &format!("val{}", j))]);
+        }
+    }
 
     group.bench_function("5_counters_3_labels", |b| {
         b.iter(|| {
@@ -237,7 +346,7 @@ fn bench_collect(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("50_counters_20_gauges_10_labels", |b| {
+    group.bench_function("50_counters_20_gauges_10_histograms_10_labels", |b| {
         b.iter(|| {
             black_box(registry_large.collect());
         });
@@ -250,8 +359,10 @@ criterion_group!(
     benches,
     bench_encode_metrics_request,
     bench_encode_gauge_request,
+    bench_encode_histogram_request,
     bench_counter_add,
     bench_gauge_set,
+    bench_histogram_observe,
     bench_collect,
 );
 criterion_main!(benches);
