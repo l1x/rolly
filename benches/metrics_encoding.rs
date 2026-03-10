@@ -31,6 +31,7 @@ fn make_counter_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<MetricS
                             ("status".to_string(), format!("{}", 200 + j % 5)),
                         ],
                         (100 + j * 10) as i64,
+                        None,
                     )
                 })
                 .collect(),
@@ -48,6 +49,7 @@ fn make_gauge_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<MetricSna
                     (
                         vec![("core".to_string(), format!("{}", j))],
                         50.0 + j as f64 * 1.5,
+                        None,
                     )
                 })
                 .collect(),
@@ -73,6 +75,7 @@ fn make_histogram_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<Metri
                     count: 112,
                     min: 0.5,
                     max: 850.0,
+                    exemplar: None,
                 })
                 .collect(),
         })
@@ -296,10 +299,7 @@ fn bench_gauge_set(c: &mut Criterion) {
 
     group.bench_function("2_attrs", |b| {
         b.iter(|| {
-            g.set(
-                black_box(42.5),
-                black_box(&[("core", "0"), ("numa", "0")]),
-            );
+            g.set(black_box(42.5), black_box(&[("core", "0"), ("numa", "0")]));
         });
     });
 

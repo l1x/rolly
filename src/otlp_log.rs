@@ -1,4 +1,6 @@
-use crate::otlp_trace::{encode_any_value, encode_key_value, encode_resource, encode_scope, AnyValue, KeyValue};
+use crate::otlp_trace::{
+    encode_any_value, encode_key_value, encode_resource, encode_scope, AnyValue, KeyValue,
+};
 use crate::proto::*;
 
 // --- Data types ---

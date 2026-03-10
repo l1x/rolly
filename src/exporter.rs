@@ -134,6 +134,7 @@ const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(1600),
 ];
 
+#[allow(clippy::too_many_arguments)]
 async fn exporter_loop(
     mut rx: mpsc::Receiver<ExportMessage>,
     client: reqwest::Client,
@@ -607,10 +608,7 @@ mod tests {
         });
 
         // Only traces_url set, logs_url is None
-        let config = test_config(
-            Some(format!("http://{}/v1/traces", addr)),
-            None,
-        );
+        let config = test_config(Some(format!("http://{}/v1/traces", addr)), None);
         let exporter = Exporter::start(config);
 
         exporter.send_traces(vec![0x0A, 0x00]);
@@ -675,10 +673,7 @@ mod tests {
                     buf.truncate(n);
                     // Extract body after \r\n\r\n
                     let request = &buf[..n];
-                    if let Some(pos) = request
-                        .windows(4)
-                        .position(|w| w == b"\r\n\r\n")
-                    {
+                    if let Some(pos) = request.windows(4).position(|w| w == b"\r\n\r\n") {
                         let body = request[pos + 4..].to_vec();
                         let _ = body_tx.send(body).await;
                     }
@@ -764,8 +759,7 @@ mod tests {
         exporter.send_traces(vec![0x0A, 0x00]);
 
         // Should arrive within ~500ms (interval + processing)
-        let result =
-            tokio::time::timeout(Duration::from_millis(1000), done_rx.recv()).await;
+        let result = tokio::time::timeout(Duration::from_millis(1000), done_rx.recv()).await;
         assert!(result.is_ok(), "data should arrive via interval flush");
 
         exporter.shutdown().await;
@@ -814,8 +808,7 @@ mod tests {
         exporter.flush().await;
 
         // Should have been sent by now
-        let result =
-            tokio::time::timeout(Duration::from_millis(500), done_rx.recv()).await;
+        let result = tokio::time::timeout(Duration::from_millis(500), done_rx.recv()).await;
         assert!(result.is_ok(), "flush should drain pending batch");
 
         exporter.shutdown().await;
@@ -864,8 +857,7 @@ mod tests {
         exporter.shutdown().await;
 
         // Shutdown should have drained the batch
-        let result =
-            tokio::time::timeout(Duration::from_millis(500), done_rx.recv()).await;
+        let result = tokio::time::timeout(Duration::from_millis(500), done_rx.recv()).await;
         assert!(result.is_ok(), "shutdown should drain remaining batch");
     }
 

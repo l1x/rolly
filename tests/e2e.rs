@@ -35,9 +35,7 @@ async fn handle_http_request(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
                 let body = buf[body_start..body_start + content_length].to_vec();
 
                 let _ = stream
-                    .write_all(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                    )
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                     .await;
 
                 return body;
@@ -74,11 +72,11 @@ async fn init_creates_spans_that_arrive_as_otlp_protobuf() {
 
     // Initialize telemetry pointing at our test server
     let guard = ro11y::init(ro11y::TelemetryConfig {
-        service_name: "e2e-test-service",
-        service_version: "0.0.1",
-        environment: "test",
-        otlp_traces_endpoint: Some(endpoint),
-        otlp_logs_endpoint: Some(endpoint),
+        service_name: "e2e-test-service".into(),
+        service_version: "0.0.1".into(),
+        environment: "test".into(),
+        otlp_traces_endpoint: Some(endpoint.to_string()),
+        otlp_logs_endpoint: Some(endpoint.to_string()),
         otlp_metrics_endpoint: None,
         log_to_stderr: false,
         use_metrics_interval: None,
@@ -99,9 +97,7 @@ async fn init_creates_spans_that_arrive_as_otlp_protobuf() {
 
     // Collect received bodies with timeout
     let mut bodies = Vec::new();
-    while let Ok(Some(body)) =
-        tokio::time::timeout(Duration::from_secs(5), body_rx.recv()).await
-    {
+    while let Ok(Some(body)) = tokio::time::timeout(Duration::from_secs(5), body_rx.recv()).await {
         bodies.push(body);
         // Stop once we've seen the trace span (init log + span trace expected)
         if bodies
@@ -113,8 +109,8 @@ async fn init_creates_spans_that_arrive_as_otlp_protobuf() {
     }
 
     let trace_id_bytes: [u8; 16] = [
-        0xaa, 0xbb, 0xcc, 0xdd, 0xaa, 0xbb, 0xcc, 0xdd, 0xaa, 0xbb, 0xcc, 0xdd, 0xaa, 0xbb,
-        0xcc, 0xdd,
+        0xaa, 0xbb, 0xcc, 0xdd, 0xaa, 0xbb, 0xcc, 0xdd, 0xaa, 0xbb, 0xcc, 0xdd, 0xaa, 0xbb, 0xcc,
+        0xdd,
     ];
 
     assert!(

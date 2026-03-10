@@ -129,7 +129,10 @@ mod tests {
     #[test]
     fn read_cpu_ticks_returns_values() {
         let result = read_cpu_ticks();
-        assert!(result.is_some(), "/proc/self/stat should be readable on Linux");
+        assert!(
+            result.is_some(),
+            "/proc/self/stat should be readable on Linux"
+        );
         let (utime, stime) = result.unwrap();
         // Process has done *some* work to get here.
         assert!(utime + stime > 0);
@@ -139,8 +142,14 @@ mod tests {
     #[test]
     fn read_rss_pages_returns_nonzero() {
         let result = read_rss_pages();
-        assert!(result.is_some(), "/proc/self/statm should be readable on Linux");
-        assert!(result.unwrap() > 0, "RSS should be > 0 for a running process");
+        assert!(
+            result.is_some(),
+            "/proc/self/statm should be readable on Linux"
+        );
+        assert!(
+            result.unwrap() > 0,
+            "RSS should be > 0 for a running process"
+        );
     }
 
     #[cfg(target_os = "linux")]

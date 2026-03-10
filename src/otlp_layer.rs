@@ -9,9 +9,7 @@ use tracing_subscriber::Layer;
 
 use crate::exporter::Exporter;
 use crate::otlp_log::{encode_export_logs_request, LogData, SeverityNumber};
-use crate::otlp_trace::{
-    encode_export_trace_request, AnyValue, KeyValue, SpanData, SpanKind,
-};
+use crate::otlp_trace::{encode_export_trace_request, AnyValue, KeyValue, SpanData, SpanKind};
 use crate::trace_id::generate_span_id;
 
 // --- Span extensions ---
@@ -231,9 +229,11 @@ where
         let trace_id = visitor.trace_id.unwrap_or([0u8; 16]);
 
         let parent = span.parent();
-        let parent_fields = parent
-            .as_ref()
-            .and_then(|p| p.extensions().get::<SpanFields>().map(|f| (f.span_id, f.sampled)));
+        let parent_fields = parent.as_ref().and_then(|p| {
+            p.extensions()
+                .get::<SpanFields>()
+                .map(|f| (f.span_id, f.sampled))
+        });
 
         let parent_span_id = parent_fields.map(|(id, _)| id).unwrap_or([0u8; 8]);
 
@@ -278,12 +278,11 @@ where
             .current_span()
             .id()
             .and_then(|id| {
-                ctx.span(id)
-                    .and_then(|s| {
-                        s.extensions()
-                            .get::<SpanFields>()
-                            .map(|f| (f.trace_id, f.span_id, f.sampled))
-                    })
+                ctx.span(id).and_then(|s| {
+                    s.extensions()
+                        .get::<SpanFields>()
+                        .map(|f| (f.trace_id, f.span_id, f.sampled))
+                })
             })
             .unwrap_or(([0u8; 16], [0u8; 8], true));
 
@@ -509,7 +508,7 @@ mod tests {
                 i64_field = 42i64,
                 u64_field = 100u64,
                 bool_field = true,
-                f64_field = 3.14f64,
+                f64_field = 1.5f64,
             );
             let _enter = span.enter();
         }
@@ -658,7 +657,9 @@ mod tests {
 
     #[test]
     fn should_sample_is_deterministic() {
-        let trace_id = [0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0, 0];
+        let trace_id = [
+            0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
         let result1 = should_sample(trace_id, 0.5);
         let result2 = should_sample(trace_id, 0.5);
         assert_eq!(result1, result2, "same trace_id must produce same decision");
@@ -699,7 +700,10 @@ mod tests {
         }
 
         let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
-        assert!(result.is_err(), "expected no messages when sampling_rate=0.0");
+        assert!(
+            result.is_err(),
+            "expected no messages when sampling_rate=0.0"
+        );
     }
 
     #[tokio::test]
@@ -760,7 +764,10 @@ mod tests {
 
         tracing::info!("standalone-log");
 
-        let msg = rx.recv().await.expect("standalone event should be exported");
+        let msg = rx
+            .recv()
+            .await
+            .expect("standalone event should be exported");
         assert!(matches!(msg, ExportMessage::Logs(_)));
     }
 }

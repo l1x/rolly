@@ -65,10 +65,10 @@ fn sampling_is_deterministic_across_8_threads() {
 #[test]
 fn sampling_boundary_rates_across_threads() {
     let trace_ids: Vec<[u8; 16]> = vec![
-        [0x00; 16],       // all zeros
-        [0xFF; 16],       // all ones
-        [0x80; 16],       // midpoint byte
-        [0; 16],          // literal zero trace_id
+        [0x00; 16], // all zeros
+        [0xFF; 16], // all ones
+        [0x80; 16], // midpoint byte
+        [0; 16],    // literal zero trace_id
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
     ];
 

@@ -1,4 +1,4 @@
-use crate::metrics::MetricSnapshot;
+use crate::metrics::{CounterDataPoint, Exemplar, ExemplarValue, GaugeDataPoint, MetricSnapshot};
 use crate::otlp_trace::{encode_resource, encode_scope, KeyValue};
 use crate::proto::*;
 
@@ -11,19 +11,43 @@ fn encode_attr_key_value(buf: &mut Vec<u8>, key: &str, value: &str) {
     });
 }
 
+/// Encode an Exemplar message.
+///
+/// Exemplar fields:
+///   time_unix_nano(2), as_double(3), span_id(4), trace_id(5), as_int(6)
+fn encode_exemplar(buf: &mut Vec<u8>, exemplar: &Exemplar) {
+    encode_fixed64_field(buf, 2, exemplar.time_unix_nano);
+    match exemplar.value {
+        ExemplarValue::Double(v) => {
+            encode_fixed64_field_always(buf, 3, v.to_bits());
+        }
+        ExemplarValue::Int(v) => {
+            encode_fixed64_field_always(buf, 6, v as u64);
+        }
+    }
+    encode_bytes_field(buf, 4, &exemplar.span_id);
+    encode_bytes_field(buf, 5, &exemplar.trace_id);
+}
+
 /// Encode a NumberDataPoint for a counter (as_int, field 6 = sfixed64).
 ///
 /// NumberDataPoint fields:
-///   attributes(7), start_time_unix_nano(2), time_unix_nano(3), as_int(6)
+///   attributes(7), start_time_unix_nano(2), time_unix_nano(3), exemplars(5), as_int(6)
 fn encode_counter_data_point(
     buf: &mut Vec<u8>,
     attrs: &[(String, String)],
     start_time_unix_nano: u64,
     time_unix_nano: u64,
     value: i64,
+    exemplar: &Option<Exemplar>,
 ) {
     encode_fixed64_field(buf, 2, start_time_unix_nano);
     encode_fixed64_field(buf, 3, time_unix_nano);
+    if let Some(ex) = exemplar {
+        encode_message_field_in_place(buf, 5, |buf| {
+            encode_exemplar(buf, ex);
+        });
+    }
     // as_int: field 6, fixed64 (sfixed64 on the wire)
     encode_fixed64_field_always(buf, 6, value as u64);
     for (k, v) in attrs {
@@ -36,18 +60,24 @@ fn encode_counter_data_point(
 /// Encode a NumberDataPoint for a gauge (as_double, field 4 = fixed64).
 ///
 /// NumberDataPoint fields:
-///   attributes(7), start_time_unix_nano(2), time_unix_nano(3), as_double(4)
+///   attributes(7), start_time_unix_nano(2), time_unix_nano(3), as_double(4), exemplars(5)
 fn encode_gauge_data_point(
     buf: &mut Vec<u8>,
     attrs: &[(String, String)],
     start_time_unix_nano: u64,
     time_unix_nano: u64,
     value: f64,
+    exemplar: &Option<Exemplar>,
 ) {
     encode_fixed64_field(buf, 2, start_time_unix_nano);
     encode_fixed64_field(buf, 3, time_unix_nano);
     // as_double: field 4, fixed64
     encode_fixed64_field_always(buf, 4, value.to_bits());
+    if let Some(ex) = exemplar {
+        encode_message_field_in_place(buf, 5, |buf| {
+            encode_exemplar(buf, ex);
+        });
+    }
     for (k, v) in attrs {
         encode_message_field_in_place(buf, 7, |buf| {
             encode_attr_key_value(buf, k, v);
@@ -59,15 +89,10 @@ fn encode_gauge_data_point(
 ///
 /// Sum fields:
 ///   data_points(1), aggregation_temporality(2), is_monotonic(3)
-fn encode_sum(
-    buf: &mut Vec<u8>,
-    data_points: &[(Vec<(String, String)>, i64)],
-    start_time: u64,
-    time: u64,
-) {
-    for (attrs, value) in data_points {
+fn encode_sum(buf: &mut Vec<u8>, data_points: &[CounterDataPoint], start_time: u64, time: u64) {
+    for (attrs, value, exemplar) in data_points {
         encode_message_field_in_place(buf, 1, |buf| {
-            encode_counter_data_point(buf, attrs, start_time, time, *value);
+            encode_counter_data_point(buf, attrs, start_time, time, *value, exemplar);
         });
     }
     // CUMULATIVE = 2
@@ -80,15 +105,10 @@ fn encode_sum(
 ///
 /// Gauge fields:
 ///   data_points(1)
-fn encode_gauge_msg(
-    buf: &mut Vec<u8>,
-    data_points: &[(Vec<(String, String)>, f64)],
-    start_time: u64,
-    time: u64,
-) {
-    for (attrs, value) in data_points {
+fn encode_gauge_msg(buf: &mut Vec<u8>, data_points: &[GaugeDataPoint], start_time: u64, time: u64) {
+    for (attrs, value, exemplar) in data_points {
         encode_message_field_in_place(buf, 1, |buf| {
-            encode_gauge_data_point(buf, attrs, start_time, time, *value);
+            encode_gauge_data_point(buf, attrs, start_time, time, *value, exemplar);
         });
     }
 }
@@ -119,6 +139,12 @@ fn encode_histogram_data_point(
     for (k, v) in &dp.attrs {
         encode_message_field_in_place(buf, 9, |buf| {
             encode_attr_key_value(buf, k, v);
+        });
+    }
+    // exemplars: field 8, repeated Exemplar
+    if let Some(ref ex) = dp.exemplar {
+        encode_message_field_in_place(buf, 8, |buf| {
+            encode_exemplar(buf, ex);
         });
     }
     // min: field 11, double as fixed64 bits — always encode
@@ -246,6 +272,7 @@ mod tests {
                     ("status".to_string(), "200".to_string()),
                 ],
                 42,
+                None,
             )],
         }];
 
@@ -277,7 +304,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Gauge {
             name: "cpu_usage".to_string(),
             description: "CPU usage percentage".to_string(),
-            data_points: vec![(vec![("core".to_string(), "0".to_string())], 75.5)],
+            data_points: vec![(vec![("core".to_string(), "0".to_string())], 75.5, None)],
         }];
 
         let bytes = encode_export_metrics_request(
@@ -306,7 +333,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 99)],
+            data_points: vec![(vec![], 99, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -325,8 +352,8 @@ mod tests {
             name: "multi".to_string(),
             description: String::new(),
             data_points: vec![
-                (vec![("k".to_string(), "a".to_string())], 10),
-                (vec![("k".to_string(), "b".to_string())], 20),
+                (vec![("k".to_string(), "a".to_string())], 10, None),
+                (vec![("k".to_string(), "b".to_string())], 20, None),
             ],
         }];
 
@@ -344,7 +371,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 1)],
+            data_points: vec![(vec![], 1, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -362,7 +389,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 1)],
+            data_points: vec![(vec![], 1, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -381,12 +408,12 @@ mod tests {
             MetricSnapshot::Counter {
                 name: "requests".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 100)],
+                data_points: vec![(vec![], 100, None)],
             },
             MetricSnapshot::Gauge {
                 name: "temperature".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 36.6)],
+                data_points: vec![(vec![], 36.6, None)],
             },
         ];
 
@@ -409,6 +436,7 @@ mod tests {
                 count: 20,
                 min: 1.0,
                 max: 250.0,
+                exemplar: None,
             }],
         }];
 
@@ -445,6 +473,7 @@ mod tests {
                 count: 1,
                 min: 5.0,
                 max: 5.0,
+                exemplar: None,
             }],
         }];
 
@@ -470,6 +499,7 @@ mod tests {
                 count: 10,
                 min: 1.0,
                 max: 50.0,
+                exemplar: None,
             }],
         }];
 
@@ -495,6 +525,7 @@ mod tests {
                 count: 1,
                 min: 5.0,
                 max: 5.0,
+                exemplar: None,
             }],
         }];
 
@@ -510,12 +541,12 @@ mod tests {
             MetricSnapshot::Counter {
                 name: "requests".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 100)],
+                data_points: vec![(vec![], 100, None)],
             },
             MetricSnapshot::Gauge {
                 name: "temperature".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 36.6)],
+                data_points: vec![(vec![], 36.6, None)],
             },
             MetricSnapshot::Histogram {
                 name: "latency".to_string(),
@@ -528,6 +559,7 @@ mod tests {
                     count: 2,
                     min: 5.0,
                     max: 10.0,
+                    exemplar: None,
                 }],
             },
         ];
@@ -544,15 +576,64 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(
-                vec![("method".to_string(), "GET".to_string())],
-                1,
-            )],
+            data_points: vec![(vec![("method".to_string(), "GET".to_string())], 1, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
 
         assert!(bytes.windows(6).any(|w| w == b"method"));
         assert!(bytes.windows(3).any(|w| w == b"GET"));
+    }
+
+    #[test]
+    fn encode_counter_with_exemplar() {
+        let exemplar = Some(crate::metrics::Exemplar {
+            trace_id: [0x01; 16],
+            span_id: [0x02; 8],
+            time_unix_nano: 5_000_000_000,
+            value: crate::metrics::ExemplarValue::Int(42),
+        });
+        let snapshots = vec![MetricSnapshot::Counter {
+            name: "c".to_string(),
+            description: String::new(),
+            data_points: vec![(vec![], 42, exemplar)],
+        }];
+
+        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+
+        // trace_id bytes should be present
+        assert!(bytes.windows(16).any(|w| w == [0x01; 16]));
+        // span_id bytes should be present
+        assert!(bytes.windows(8).any(|w| w == [0x02; 8]));
+    }
+
+    #[test]
+    fn encode_histogram_with_exemplar() {
+        let exemplar = Some(crate::metrics::Exemplar {
+            trace_id: [0xAA; 16],
+            span_id: [0xBB; 8],
+            time_unix_nano: 9_000_000_000,
+            value: crate::metrics::ExemplarValue::Double(42.5),
+        });
+        let snapshots = vec![MetricSnapshot::Histogram {
+            name: "h".to_string(),
+            description: String::new(),
+            boundaries: vec![10.0],
+            data_points: vec![crate::metrics::HistogramDataPoint {
+                attrs: vec![],
+                bucket_counts: vec![1, 0],
+                sum: 42.5,
+                count: 1,
+                min: 42.5,
+                max: 42.5,
+                exemplar,
+            }],
+        }];
+
+        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+
+        // trace_id and span_id bytes should be present
+        assert!(bytes.windows(16).any(|w| w == [0xAA; 16]));
+        assert!(bytes.windows(8).any(|w| w == [0xBB; 8]));
     }
 }

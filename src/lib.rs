@@ -1,3 +1,4 @@
+pub mod constants;
 pub(crate) mod exporter;
 pub mod metrics;
 pub(crate) mod otlp_layer;
@@ -8,7 +9,6 @@ pub(crate) mod proto;
 #[cfg(feature = "tower")]
 pub mod tower;
 pub mod trace_id;
-pub mod constants;
 pub(crate) mod use_metrics;
 
 #[cfg(feature = "tower")]
@@ -26,18 +26,18 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 /// Configuration for the telemetry stack.
 pub struct TelemetryConfig {
-    pub service_name: &'static str,
-    pub service_version: &'static str,
-    pub environment: &'static str,
+    pub service_name: String,
+    pub service_version: String,
+    pub environment: String,
     /// OTLP HTTP endpoint for traces (e.g. "http://jaeger:4318").
     /// If None, trace export is disabled.
-    pub otlp_traces_endpoint: Option<&'static str>,
+    pub otlp_traces_endpoint: Option<String>,
     /// OTLP HTTP endpoint for logs (e.g. "http://vector:4318").
     /// If None, log export is disabled. Can differ from traces endpoint.
-    pub otlp_logs_endpoint: Option<&'static str>,
+    pub otlp_logs_endpoint: Option<String>,
     /// OTLP HTTP endpoint for metrics (e.g. "http://vector:4318").
     /// If None, metrics export is disabled.
-    pub otlp_metrics_endpoint: Option<&'static str>,
+    pub otlp_metrics_endpoint: Option<String>,
     /// Whether to emit JSON-formatted logs to stderr.
     pub log_to_stderr: bool,
     /// Polling interval for USE metrics (cpu, memory) from `/proc/self/stat`.
@@ -109,14 +109,17 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
 
     let metrics_url = config
         .otlp_metrics_endpoint
+        .as_deref()
         .map(|ep| format!("{}/v1/metrics", ep));
 
     let (otlp_layer, exporter) = if export_traces || export_logs || export_metrics {
         let traces_url = config
             .otlp_traces_endpoint
+            .as_deref()
             .map(|ep| format!("{}/v1/traces", ep));
         let logs_url = config
             .otlp_logs_endpoint
+            .as_deref()
             .map(|ep| format!("{}/v1/logs", ep));
         let exp = Exporter::start(ExporterConfig {
             traces_url,
@@ -131,9 +134,9 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
         let layer = if export_traces || export_logs {
             Some(OtlpLayer::new(
                 exp.clone(),
-                config.service_name,
-                config.service_version,
-                config.environment,
+                &config.service_name,
+                &config.service_version,
+                &config.environment,
                 export_traces,
                 export_logs,
                 sampling_rate,
@@ -153,9 +156,9 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
         .init();
 
     tracing::info!(
-        service.name = config.service_name,
-        service.version = config.service_version,
-        environment = config.environment,
+        service.name = config.service_name.as_str(),
+        service.version = config.service_version.as_str(),
+        environment = config.environment.as_str(),
         "telemetry initialized"
     );
 
@@ -193,9 +196,9 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
 async fn metrics_aggregation_loop(
     exporter: Exporter,
     flush_interval: Duration,
-    service_name: &'static str,
-    service_version: &'static str,
-    environment: &'static str,
+    service_name: String,
+    service_version: String,
+    environment: String,
 ) {
     use crate::otlp_metrics::encode_export_metrics_request;
     use crate::otlp_trace::{AnyValue, KeyValue};
@@ -203,15 +206,15 @@ async fn metrics_aggregation_loop(
     let resource_attrs = vec![
         KeyValue {
             key: "service.name".to_string(),
-            value: AnyValue::String(service_name.to_string()),
+            value: AnyValue::String(service_name),
         },
         KeyValue {
             key: "service.version".to_string(),
-            value: AnyValue::String(service_version.to_string()),
+            value: AnyValue::String(service_version.clone()),
         },
         KeyValue {
             key: "deployment.environment".to_string(),
-            value: AnyValue::String(environment.to_string()),
+            value: AnyValue::String(environment),
         },
     ];
 
@@ -242,7 +245,7 @@ async fn metrics_aggregation_loop(
         let data = encode_export_metrics_request(
             &resource_attrs,
             "ro11y",
-            service_version,
+            &service_version,
             &snapshots,
             start_time,
             now,
@@ -274,8 +277,9 @@ pub fn propagation_layer() -> PropagationLayer {
 pub mod bench {
     pub use crate::exporter::{Exporter, ExporterConfig};
     pub use crate::metrics::{
-        counter, gauge, global_registry, histogram, Counter, Gauge, Histogram,
-        HistogramDataPoint, MetricSnapshot, MetricsRegistry,
+        counter, gauge, global_registry, histogram, Attrs, Counter, CounterDataPoint, Exemplar,
+        ExemplarValue, Gauge, GaugeDataPoint, Histogram, HistogramDataPoint, MetricSnapshot,
+        MetricsRegistry,
     };
     pub fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
         crate::otlp_layer::should_sample(trace_id, sampling_rate)
@@ -307,9 +311,9 @@ mod tests {
     #[test]
     fn config_with_none_endpoint_does_not_panic() {
         let _config = TelemetryConfig {
-            service_name: "test-service",
-            service_version: "0.0.1",
-            environment: "test",
+            service_name: "test-service".into(),
+            service_version: "0.0.1".into(),
+            environment: "test".into(),
             otlp_traces_endpoint: None,
             otlp_logs_endpoint: None,
             otlp_metrics_endpoint: None,

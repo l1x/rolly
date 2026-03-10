@@ -28,6 +28,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::const_is_empty)]
     fn field_constants_are_non_empty() {
         assert!(!fields::TRACE_ID.is_empty());
         assert!(!fields::SPAN_ID.is_empty());
@@ -39,6 +40,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::const_is_empty)]
     fn metric_constants_are_non_empty() {
         assert!(!metrics::REQUEST_DURATION.is_empty());
         assert!(!metrics::REQUEST_COUNT.is_empty());

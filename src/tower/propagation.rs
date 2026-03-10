@@ -91,11 +91,7 @@ mod tests {
     fn traceparent_format() {
         let trace_id = [1u8; 16];
         let span_id = [2u8; 8];
-        let tp = format!(
-            "00-{}-{}-01",
-            hex_encode(&trace_id),
-            hex_encode(&span_id)
-        );
+        let tp = format!("00-{}-{}-01", hex_encode(&trace_id), hex_encode(&span_id));
         assert_eq!(
             tp,
             "00-01010101010101010101010101010101-0202020202020202-01"

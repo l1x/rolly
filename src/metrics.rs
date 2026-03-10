@@ -18,21 +18,45 @@ pub struct HistogramDataPoint {
     pub count: u64,
     pub min: f64,
     pub max: f64,
+    pub exemplar: Option<Exemplar>,
 }
+
+/// An exemplar linking a metric data point to a trace.
+#[derive(Clone, Debug)]
+pub struct Exemplar {
+    pub trace_id: [u8; 16],
+    pub span_id: [u8; 8],
+    pub time_unix_nano: u64,
+    pub value: ExemplarValue,
+}
+
+/// The measured value attached to an exemplar.
+#[derive(Clone, Debug)]
+pub enum ExemplarValue {
+    Int(i64),
+    Double(f64),
+}
+
+/// Sorted attribute pairs.
+pub type Attrs = Vec<(String, String)>;
+
+/// A counter data point: (attrs, cumulative value, optional exemplar).
+pub type CounterDataPoint = (Attrs, i64, Option<Exemplar>);
+
+/// A gauge data point: (attrs, last value, optional exemplar).
+pub type GaugeDataPoint = (Attrs, f64, Option<Exemplar>);
 
 /// A snapshot of a single metric for encoding.
 pub enum MetricSnapshot {
     Counter {
         name: String,
         description: String,
-        /// Each entry: (sorted attribute pairs, cumulative value)
-        data_points: Vec<(Vec<(String, String)>, i64)>,
+        data_points: Vec<CounterDataPoint>,
     },
     Gauge {
         name: String,
         description: String,
-        /// Each entry: (sorted attribute pairs, last value)
-        data_points: Vec<(Vec<(String, String)>, f64)>,
+        data_points: Vec<GaugeDataPoint>,
     },
     Histogram {
         name: String,
@@ -47,6 +71,12 @@ pub struct MetricsRegistry {
     counters: RwLock<HashMap<String, Counter>>,
     gauges: RwLock<HashMap<String, Gauge>>,
     histograms: RwLock<HashMap<String, Histogram>>,
+}
+
+impl Default for MetricsRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MetricsRegistry {
@@ -133,17 +163,21 @@ impl MetricsRegistry {
     }
 
     /// Snapshot all metrics for encoding. Does not reset counters (cumulative).
+    /// Exemplars are consumed (reset to `None`) on each collect — fresh sample each interval.
     pub fn collect(&self) -> Vec<MetricSnapshot> {
         let mut snapshots = Vec::new();
 
         {
             let counters = self.counters.read().unwrap();
             for counter in counters.values() {
-                let data = counter.inner.data.lock().unwrap();
+                let mut data = counter.inner.data.lock().unwrap();
                 if data.is_empty() {
                     continue;
                 }
-                let data_points: Vec<_> = data.values().cloned().collect();
+                let data_points: Vec<_> = data
+                    .values_mut()
+                    .map(|(attrs, val, exemplar)| (attrs.clone(), *val, exemplar.take()))
+                    .collect();
                 snapshots.push(MetricSnapshot::Counter {
                     name: counter.inner.name.clone(),
                     description: counter.inner.description.clone(),
@@ -155,11 +189,14 @@ impl MetricsRegistry {
         {
             let gauges = self.gauges.read().unwrap();
             for gauge in gauges.values() {
-                let data = gauge.inner.data.lock().unwrap();
+                let mut data = gauge.inner.data.lock().unwrap();
                 if data.is_empty() {
                     continue;
                 }
-                let data_points: Vec<_> = data.values().cloned().collect();
+                let data_points: Vec<_> = data
+                    .values_mut()
+                    .map(|(attrs, val, exemplar)| (attrs.clone(), *val, exemplar.take()))
+                    .collect();
                 snapshots.push(MetricSnapshot::Gauge {
                     name: gauge.inner.name.clone(),
                     description: gauge.inner.description.clone(),
@@ -171,19 +208,20 @@ impl MetricsRegistry {
         {
             let histograms = self.histograms.read().unwrap();
             for histogram in histograms.values() {
-                let data = histogram.inner.data.lock().unwrap();
+                let mut data = histogram.inner.data.lock().unwrap();
                 if data.is_empty() {
                     continue;
                 }
                 let data_points: Vec<_> = data
-                    .values()
-                    .map(|(attrs, state)| HistogramDataPoint {
+                    .values_mut()
+                    .map(|(attrs, state, exemplar)| HistogramDataPoint {
                         attrs: attrs.clone(),
                         bucket_counts: state.bucket_counts.clone(),
                         sum: state.sum,
                         count: state.count,
                         min: state.min,
                         max: state.max,
+                        exemplar: exemplar.take(),
                     })
                     .collect();
                 snapshots.push(MetricSnapshot::Histogram {
@@ -219,13 +257,57 @@ fn owned_attrs(attrs: &[(&str, &str)]) -> Vec<(String, String)> {
     owned
 }
 
+/// Read the current span's trace_id and span_id from the tracing subscriber.
+/// Returns `None` when no span is active or no `SpanFields` extension is found.
+fn current_trace_context() -> Option<([u8; 16], [u8; 8])> {
+    let mut result = None;
+    tracing::Span::current().with_subscriber(|(id, dispatch)| {
+        use tracing_subscriber::registry::LookupSpan;
+        if let Some(registry) = dispatch.downcast_ref::<tracing_subscriber::Registry>() {
+            if let Some(span_ref) = registry.span(id) {
+                let ext = span_ref.extensions();
+                if let Some(fields) = ext.get::<crate::otlp_layer::SpanFields>() {
+                    result = Some((fields.trace_id, fields.span_id));
+                } else {
+                    for ancestor in span_ref.scope().skip(1) {
+                        let ext = ancestor.extensions();
+                        if let Some(fields) = ext.get::<crate::otlp_layer::SpanFields>() {
+                            result = Some((fields.trace_id, fields.span_id));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    result
+}
+
+/// Capture an exemplar from the current trace context if available.
+/// Skips all-zero trace_ids (no active trace).
+fn capture_exemplar(value: ExemplarValue) -> Option<Exemplar> {
+    let (trace_id, span_id) = current_trace_context()?;
+    if trace_id == [0u8; 16] {
+        return None;
+    }
+    let time_unix_nano = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    Some(Exemplar {
+        trace_id,
+        span_id,
+        time_unix_nano,
+        value,
+    })
+}
+
 // --- Counter ---
 
 struct CounterInner {
     name: String,
     description: String,
-    /// Key: hash of sorted attribute pairs. Value: (owned attrs, cumulative value).
-    data: Mutex<HashMap<u64, (Vec<(String, String)>, i64)>>,
+    data: Mutex<HashMap<u64, CounterDataPoint>>,
 }
 
 /// A monotonic u64 counter. Clone is cheap (Arc).
@@ -237,14 +319,18 @@ pub struct Counter {
 impl Counter {
     /// Add a value to the counter for the given attribute set.
     pub fn add(&self, value: u64, attrs: &[(&str, &str)]) {
+        let exemplar = capture_exemplar(ExemplarValue::Int(value as i64));
         let mut sorted = attrs.to_vec();
         sorted.sort();
         let key = attrs_hash(&sorted);
         let mut data = self.inner.data.lock().unwrap();
         let entry = data
             .entry(key)
-            .or_insert_with(|| (owned_attrs(&sorted), 0));
+            .or_insert_with(|| (owned_attrs(&sorted), 0, None));
         entry.1 += value as i64;
+        if exemplar.is_some() {
+            entry.2 = exemplar;
+        }
     }
 }
 
@@ -253,8 +339,7 @@ impl Counter {
 struct GaugeInner {
     name: String,
     description: String,
-    /// Key: hash of sorted attribute pairs. Value: (owned attrs, last value).
-    data: Mutex<HashMap<u64, (Vec<(String, String)>, f64)>>,
+    data: Mutex<HashMap<u64, GaugeDataPoint>>,
 }
 
 /// A last-value f64 gauge. Clone is cheap (Arc).
@@ -266,14 +351,18 @@ pub struct Gauge {
 impl Gauge {
     /// Set the gauge to a value for the given attribute set.
     pub fn set(&self, value: f64, attrs: &[(&str, &str)]) {
+        let exemplar = capture_exemplar(ExemplarValue::Double(value));
         let mut sorted = attrs.to_vec();
         sorted.sort();
         let key = attrs_hash(&sorted);
         let mut data = self.inner.data.lock().unwrap();
         let entry = data
             .entry(key)
-            .or_insert_with(|| (owned_attrs(&sorted), 0.0));
+            .or_insert_with(|| (owned_attrs(&sorted), 0.0, None));
         entry.1 = value;
+        if exemplar.is_some() {
+            entry.2 = exemplar;
+        }
     }
 }
 
@@ -287,12 +376,13 @@ struct HistogramState {
     max: f64,
 }
 
+type HistogramEntry = (Attrs, HistogramState, Option<Exemplar>);
+
 struct HistogramInner {
     name: String,
     description: String,
     boundaries: Vec<f64>,
-    /// Key: hash of sorted attribute pairs. Value: (owned attrs, state).
-    data: Mutex<HashMap<u64, (Vec<(String, String)>, HistogramState)>>,
+    data: Mutex<HashMap<u64, HistogramEntry>>,
 }
 
 /// A histogram with client-side bucketing. Clone is cheap (Arc).
@@ -304,10 +394,8 @@ pub struct Histogram {
 impl Histogram {
     /// Record an observed value for the given attribute set.
     pub fn observe(&self, value: f64, attrs: &[(&str, &str)]) {
-        let bucket_idx = self
-            .inner
-            .boundaries
-            .partition_point(|&b| b <= value);
+        let exemplar = capture_exemplar(ExemplarValue::Double(value));
+        let bucket_idx = self.inner.boundaries.partition_point(|&b| b <= value);
         let mut sorted = attrs.to_vec();
         sorted.sort();
         let key = attrs_hash(&sorted);
@@ -323,6 +411,7 @@ impl Histogram {
                     min: f64::INFINITY,
                     max: f64::NEG_INFINITY,
                 },
+                None,
             )
         });
         entry.1.bucket_counts[bucket_idx] += 1;
@@ -333,6 +422,9 @@ impl Histogram {
         }
         if value > entry.1.max {
             entry.1.max = value;
+        }
+        if exemplar.is_some() {
+            entry.2 = exemplar;
         }
     }
 }
@@ -369,18 +461,20 @@ mod tests {
         let snapshots = registry.collect();
         assert_eq!(snapshots.len(), 1);
         match &snapshots[0] {
-            MetricSnapshot::Counter { name, data_points, .. } => {
+            MetricSnapshot::Counter {
+                name, data_points, ..
+            } => {
                 assert_eq!(name, "req_total");
                 assert_eq!(data_points.len(), 2);
                 let get_val = data_points
                     .iter()
-                    .find(|(a, _)| a[0].1 == "GET")
+                    .find(|(a, _, _)| a[0].1 == "GET")
                     .unwrap()
                     .1;
                 assert_eq!(get_val, 4);
                 let post_val = data_points
                     .iter()
-                    .find(|(a, _)| a[0].1 == "POST")
+                    .find(|(a, _, _)| a[0].1 == "POST")
                     .unwrap()
                     .1;
                 assert_eq!(post_val, 1);
@@ -399,7 +493,9 @@ mod tests {
         let snapshots = registry.collect();
         assert_eq!(snapshots.len(), 1);
         match &snapshots[0] {
-            MetricSnapshot::Gauge { name, data_points, .. } => {
+            MetricSnapshot::Gauge {
+                name, data_points, ..
+            } => {
                 assert_eq!(name, "cpu_usage");
                 assert_eq!(data_points.len(), 1);
                 assert!((data_points[0].1 - 75.5).abs() < f64::EPSILON);
@@ -574,6 +670,63 @@ mod tests {
                 assert!(data_points[0].attrs.is_empty());
             }
             _ => panic!("expected Histogram"),
+        }
+    }
+
+    #[test]
+    fn counter_no_exemplar_without_span() {
+        // Without an active tracing span, exemplar should be None.
+        let registry = MetricsRegistry::new();
+        let c = registry.counter("no_span", "test");
+        c.add(1, &[]);
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert!(data_points[0].2.is_none());
+            }
+            _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn exemplar_resets_on_collect() {
+        // Manually insert an exemplar and verify it's consumed on collect.
+        let registry = MetricsRegistry::new();
+        let c = registry.counter("reset_test", "test");
+        c.add(1, &[]);
+
+        // Inject a fake exemplar directly.
+        {
+            let counters = registry.counters.read().unwrap();
+            let counter = counters.get("reset_test").unwrap();
+            let mut data = counter.inner.data.lock().unwrap();
+            for entry in data.values_mut() {
+                entry.2 = Some(Exemplar {
+                    trace_id: [0xAA; 16],
+                    span_id: [0xBB; 8],
+                    time_unix_nano: 123_456,
+                    value: ExemplarValue::Int(1),
+                });
+            }
+        }
+
+        // First collect should yield the exemplar.
+        let snap1 = registry.collect();
+        match &snap1[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert!(data_points[0].2.is_some());
+            }
+            _ => panic!("expected Counter"),
+        }
+
+        // Second collect should have None (reset by .take()).
+        let snap2 = registry.collect();
+        match &snap2[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert!(data_points[0].2.is_none());
+            }
+            _ => panic!("expected Counter"),
         }
     }
 }
