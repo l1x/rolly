@@ -168,7 +168,7 @@ pub fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
 // --- Layer ---
 
 /// Custom tracing Layer that encodes spans/events as OTLP protobuf and sends to Exporter.
-pub(crate) struct OtlpLayer {
+pub struct OtlpLayer {
     exporter: Exporter,
     resource_attrs: Vec<KeyValue>,
     scope_name: String,

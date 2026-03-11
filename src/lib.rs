@@ -275,7 +275,7 @@ pub fn propagation_layer() -> PropagationLayer {
 #[cfg(feature = "_bench")]
 #[doc(hidden)]
 pub mod bench {
-    pub use crate::exporter::{Exporter, ExporterConfig};
+    pub use crate::exporter::{ExportMessage, Exporter, ExporterConfig};
     pub use crate::metrics::{
         counter, gauge, global_registry, histogram, Attrs, Counter, CounterDataPoint, Exemplar,
         ExemplarValue, Gauge, GaugeDataPoint, Histogram, HistogramDataPoint, MetricSnapshot,
@@ -290,7 +290,9 @@ pub mod bench {
         encode_export_trace_request, encode_key_value, encode_resource, AnyValue, KeyValue,
         SpanData, SpanKind, SpanStatus, StatusCode,
     };
+    pub use crate::otlp_layer::OtlpLayer;
     pub use crate::proto::{encode_message_field, encode_message_field_in_place};
+    pub use crate::trace_id::{generate_span_id, generate_trace_id, hex_encode};
 
     // Thin wrappers for pub(crate) proto functions
     pub fn encode_varint_field(buf: &mut Vec<u8>, field: u32, val: u64) {

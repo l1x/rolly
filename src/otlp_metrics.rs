@@ -136,7 +136,7 @@ fn encode_histogram_data_point(
     // explicit_bounds: field 7, packed repeated double
     encode_packed_double_field(buf, 7, boundaries);
     // attributes: field 9, repeated KeyValue
-    for (k, v) in &dp.attrs {
+    for (k, v) in dp.attrs.iter() {
         encode_message_field_in_place(buf, 9, |buf| {
             encode_attr_key_value(buf, k, v);
         });
@@ -260,6 +260,7 @@ pub fn encode_export_metrics_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn encode_counter_metric_is_nonempty() {
@@ -267,10 +268,10 @@ mod tests {
             name: "http_requests_total".to_string(),
             description: "Total HTTP requests".to_string(),
             data_points: vec![(
-                vec![
+                Arc::new(vec![
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "200".to_string()),
-                ],
+                ]),
                 42,
                 None,
             )],
@@ -304,7 +305,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Gauge {
             name: "cpu_usage".to_string(),
             description: "CPU usage percentage".to_string(),
-            data_points: vec![(vec![("core".to_string(), "0".to_string())], 75.5, None)],
+            data_points: vec![(Arc::new(vec![("core".to_string(), "0".to_string())]), 75.5, None)],
         }];
 
         let bytes = encode_export_metrics_request(
@@ -333,7 +334,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 99, None)],
+            data_points: vec![(Arc::new(vec![]), 99, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -352,8 +353,8 @@ mod tests {
             name: "multi".to_string(),
             description: String::new(),
             data_points: vec![
-                (vec![("k".to_string(), "a".to_string())], 10, None),
-                (vec![("k".to_string(), "b".to_string())], 20, None),
+                (Arc::new(vec![("k".to_string(), "a".to_string())]), 10, None),
+                (Arc::new(vec![("k".to_string(), "b".to_string())]), 20, None),
             ],
         }];
 
@@ -371,7 +372,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 1, None)],
+            data_points: vec![(Arc::new(vec![]), 1, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -389,7 +390,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 1, None)],
+            data_points: vec![(Arc::new(vec![]), 1, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -408,12 +409,12 @@ mod tests {
             MetricSnapshot::Counter {
                 name: "requests".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 100, None)],
+                data_points: vec![(Arc::new(vec![]), 100, None)],
             },
             MetricSnapshot::Gauge {
                 name: "temperature".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 36.6, None)],
+                data_points: vec![(Arc::new(vec![]), 36.6, None)],
             },
         ];
 
@@ -430,7 +431,7 @@ mod tests {
             description: "Request duration histogram".to_string(),
             boundaries: vec![10.0, 50.0, 100.0],
             data_points: vec![crate::metrics::HistogramDataPoint {
-                attrs: vec![("method".to_string(), "GET".to_string())],
+                attrs: Arc::new(vec![("method".to_string(), "GET".to_string())]),
                 bucket_counts: vec![5, 10, 3, 2],
                 sum: 1234.5,
                 count: 20,
@@ -467,7 +468,7 @@ mod tests {
             description: String::new(),
             boundaries: vec![10.0],
             data_points: vec![crate::metrics::HistogramDataPoint {
-                attrs: vec![],
+                attrs: Arc::new(vec![]),
                 bucket_counts: vec![1, 0],
                 sum: 5.0,
                 count: 1,
@@ -493,7 +494,7 @@ mod tests {
             description: String::new(),
             boundaries: vec![10.0],
             data_points: vec![crate::metrics::HistogramDataPoint {
-                attrs: vec![],
+                attrs: Arc::new(vec![]),
                 bucket_counts: vec![3, 7],
                 sum: 100.0,
                 count: 10,
@@ -519,7 +520,7 @@ mod tests {
             description: String::new(),
             boundaries: vec![10.0],
             data_points: vec![crate::metrics::HistogramDataPoint {
-                attrs: vec![("method".to_string(), "GET".to_string())],
+                attrs: Arc::new(vec![("method".to_string(), "GET".to_string())]),
                 bucket_counts: vec![1, 0],
                 sum: 5.0,
                 count: 1,
@@ -541,19 +542,19 @@ mod tests {
             MetricSnapshot::Counter {
                 name: "requests".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 100, None)],
+                data_points: vec![(Arc::new(vec![]), 100, None)],
             },
             MetricSnapshot::Gauge {
                 name: "temperature".to_string(),
                 description: String::new(),
-                data_points: vec![(vec![], 36.6, None)],
+                data_points: vec![(Arc::new(vec![]), 36.6, None)],
             },
             MetricSnapshot::Histogram {
                 name: "latency".to_string(),
                 description: String::new(),
                 boundaries: vec![10.0],
                 data_points: vec![crate::metrics::HistogramDataPoint {
-                    attrs: vec![],
+                    attrs: Arc::new(vec![]),
                     bucket_counts: vec![1, 1],
                     sum: 15.0,
                     count: 2,
@@ -576,7 +577,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![("method".to_string(), "GET".to_string())], 1, None)],
+            data_points: vec![(Arc::new(vec![("method".to_string(), "GET".to_string())]), 1, None)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -596,7 +597,7 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(vec![], 42, exemplar)],
+            data_points: vec![(Arc::new(vec![]), 42, exemplar)],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
@@ -620,7 +621,7 @@ mod tests {
             description: String::new(),
             boundaries: vec![10.0],
             data_points: vec![crate::metrics::HistogramDataPoint {
-                attrs: vec![],
+                attrs: Arc::new(vec![]),
                 bucket_counts: vec![1, 0],
                 sum: 42.5,
                 count: 1,

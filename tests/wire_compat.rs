@@ -9,6 +9,8 @@ use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 
+use std::sync::Arc;
+
 use ro11y::bench::{
     encode_export_logs_request, encode_export_metrics_request, encode_export_trace_request,
     AnyValue, Exemplar, ExemplarValue, HistogramDataPoint, KeyValue, LogData, MetricSnapshot,
@@ -309,10 +311,10 @@ fn counter_metric_decodes_via_prost() {
         name: "http_requests_total".into(),
         description: "Total HTTP requests".into(),
         data_points: vec![(
-            vec![
+            Arc::new(vec![
                 ("method".into(), "GET".into()),
                 ("status".into(), "200".into()),
-            ],
+            ]),
             42,
             None,
         )],
@@ -361,7 +363,7 @@ fn gauge_metric_decodes_via_prost() {
     let snapshots = vec![MetricSnapshot::Gauge {
         name: "cpu_usage".into(),
         description: "CPU usage".into(),
-        data_points: vec![(vec![("core".into(), "0".into())], 75.5, None)],
+        data_points: vec![(Arc::new(vec![("core".into(), "0".into())]), 75.5, None)],
     }];
 
     let bytes = encode_export_metrics_request(
@@ -401,10 +403,10 @@ fn histogram_metric_decodes_via_prost() {
         description: "Request duration in milliseconds".into(),
         boundaries: vec![10.0, 50.0, 100.0, 500.0],
         data_points: vec![HistogramDataPoint {
-            attrs: vec![
+            attrs: Arc::new(vec![
                 ("method".into(), "GET".into()),
                 ("path".into(), "/api".into()),
-            ],
+            ]),
             bucket_counts: vec![5, 15, 8, 3, 1],
             sum: 2345.6,
             count: 32,
@@ -459,7 +461,7 @@ fn histogram_multiple_data_points_decode() {
         boundaries: vec![10.0, 100.0],
         data_points: vec![
             HistogramDataPoint {
-                attrs: vec![("method".into(), "GET".into())],
+                attrs: Arc::new(vec![("method".into(), "GET".into())]),
                 bucket_counts: vec![5, 3, 1],
                 sum: 200.0,
                 count: 9,
@@ -468,7 +470,7 @@ fn histogram_multiple_data_points_decode() {
                 exemplar: None,
             },
             HistogramDataPoint {
-                attrs: vec![("method".into(), "POST".into())],
+                attrs: Arc::new(vec![("method".into(), "POST".into())]),
                 bucket_counts: vec![2, 8, 0],
                 sum: 450.0,
                 count: 10,
@@ -501,19 +503,19 @@ fn mixed_metrics_decode() {
         MetricSnapshot::Counter {
             name: "requests".into(),
             description: String::new(),
-            data_points: vec![(vec![], 100, None)],
+            data_points: vec![(Arc::new(vec![]), 100, None)],
         },
         MetricSnapshot::Gauge {
             name: "temperature".into(),
             description: String::new(),
-            data_points: vec![(vec![], 36.6, None)],
+            data_points: vec![(Arc::new(vec![]), 36.6, None)],
         },
         MetricSnapshot::Histogram {
             name: "latency".into(),
             description: String::new(),
             boundaries: vec![10.0],
             data_points: vec![HistogramDataPoint {
-                attrs: vec![],
+                attrs: Arc::new(vec![]),
                 bucket_counts: vec![1, 1],
                 sum: 15.0,
                 count: 2,
@@ -572,7 +574,7 @@ fn counter_with_exemplar_decodes_via_prost() {
     let snapshots = vec![MetricSnapshot::Counter {
         name: "exemplar_counter".into(),
         description: String::new(),
-        data_points: vec![(vec![], 42, exemplar)],
+        data_points: vec![(Arc::new(vec![]), 42, exemplar)],
     }];
 
     let bytes = encode_export_metrics_request(
@@ -625,7 +627,7 @@ fn histogram_with_exemplar_decodes_via_prost() {
         description: String::new(),
         boundaries: vec![10.0],
         data_points: vec![HistogramDataPoint {
-            attrs: vec![],
+            attrs: Arc::new(vec![]),
             bucket_counts: vec![1, 0],
             sum: 42.5,
             count: 1,

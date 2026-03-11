@@ -12,7 +12,7 @@ pub fn global_registry() -> &'static MetricsRegistry {
 
 /// Snapshot of a single histogram data point.
 pub struct HistogramDataPoint {
-    pub attrs: Vec<(String, String)>,
+    pub attrs: Arc<Vec<(String, String)>>,
     pub bucket_counts: Vec<u64>,
     pub sum: f64,
     pub count: u64,
@@ -37,8 +37,8 @@ pub enum ExemplarValue {
     Double(f64),
 }
 
-/// Sorted attribute pairs.
-pub type Attrs = Vec<(String, String)>;
+/// Sorted attribute pairs. Wrapped in `Arc` for zero-copy snapshots during `collect()`.
+pub type Attrs = Arc<Vec<(String, String)>>;
 
 /// A counter data point: (attrs, cumulative value, optional exemplar).
 pub type CounterDataPoint = (Attrs, i64, Option<Exemplar>);
@@ -176,7 +176,7 @@ impl MetricsRegistry {
                 }
                 let data_points: Vec<_> = data
                     .values_mut()
-                    .map(|(attrs, val, exemplar)| (attrs.clone(), *val, exemplar.take()))
+                    .map(|(attrs, val, exemplar)| (Arc::clone(attrs), *val, exemplar.take()))
                     .collect();
                 snapshots.push(MetricSnapshot::Counter {
                     name: counter.inner.name.clone(),
@@ -195,7 +195,7 @@ impl MetricsRegistry {
                 }
                 let data_points: Vec<_> = data
                     .values_mut()
-                    .map(|(attrs, val, exemplar)| (attrs.clone(), *val, exemplar.take()))
+                    .map(|(attrs, val, exemplar)| (Arc::clone(attrs), *val, exemplar.take()))
                     .collect();
                 snapshots.push(MetricSnapshot::Gauge {
                     name: gauge.inner.name.clone(),
@@ -215,7 +215,7 @@ impl MetricsRegistry {
                 let data_points: Vec<_> = data
                     .values_mut()
                     .map(|(attrs, state, exemplar)| HistogramDataPoint {
-                        attrs: attrs.clone(),
+                        attrs: Arc::clone(attrs),
                         bucket_counts: state.bucket_counts.clone(),
                         sum: state.sum,
                         count: state.count,
@@ -247,14 +247,14 @@ fn attrs_hash(attrs: &[(&str, &str)]) -> u64 {
     hasher.finish()
 }
 
-/// Sort and own attribute pairs.
-fn owned_attrs(attrs: &[(&str, &str)]) -> Vec<(String, String)> {
+/// Sort and own attribute pairs, wrapped in Arc for zero-copy snapshots.
+fn owned_attrs(attrs: &[(&str, &str)]) -> Arc<Vec<(String, String)>> {
     let mut owned: Vec<(String, String)> = attrs
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
     owned.sort();
-    owned
+    Arc::new(owned)
 }
 
 /// Read the current span's trace_id and span_id from the tracing subscriber.

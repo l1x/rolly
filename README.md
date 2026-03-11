@@ -156,6 +156,14 @@ ro11y hand-rolls the protobuf wire format (~200 lines). The format has been stab
 
 7 direct dependencies. No `opentelemetry`, `tonic`, or `prost`.
 
+## Performance
+
+ro11y targets <10% CPU overhead at 3000 req/s on ARM64.
+
+![Performance baseline](docs/performance.svg)
+
+Benchmarks simulate realistic e-commerce API traffic. See [benches/baseline.toml](benches/baseline.toml) for raw numbers.
+
 ## License
 
 MIT OR Apache-2.0

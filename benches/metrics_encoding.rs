@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ro11y::bench::*;
 
@@ -26,10 +28,10 @@ fn make_counter_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<MetricS
             data_points: (0..n_data_points)
                 .map(|j| {
                     (
-                        vec![
+                        Arc::new(vec![
                             ("method".to_string(), format!("M{}", j % 4)),
                             ("status".to_string(), format!("{}", 200 + j % 5)),
-                        ],
+                        ]),
                         (100 + j * 10) as i64,
                         None,
                     )
@@ -47,7 +49,7 @@ fn make_gauge_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<MetricSna
             data_points: (0..n_data_points)
                 .map(|j| {
                     (
-                        vec![("core".to_string(), format!("{}", j))],
+                        Arc::new(vec![("core".to_string(), format!("{}", j))]),
                         50.0 + j as f64 * 1.5,
                         None,
                     )
@@ -66,10 +68,10 @@ fn make_histogram_snapshots(n_metrics: usize, n_data_points: usize) -> Vec<Metri
             boundaries: boundaries.clone(),
             data_points: (0..n_data_points)
                 .map(|j| HistogramDataPoint {
-                    attrs: vec![
+                    attrs: Arc::new(vec![
                         ("method".to_string(), format!("M{}", j % 4)),
                         ("status".to_string(), format!("{}", 200 + j % 5)),
-                    ],
+                    ]),
                     bucket_counts: vec![10, 20, 30, 25, 15, 8, 3, 1, 0],
                     sum: 5000.0 + j as f64 * 100.0,
                     count: 112,

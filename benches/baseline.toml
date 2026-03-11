@@ -1,0 +1,61 @@
+[metadata]
+version = "0.5.1"
+date = "2026-03-11"
+platform = "arm64-darwin"
+cpu = "Apple M-series"
+rust_version = "1.85.0"
+notes = "Measured on AC power, no background load. Realistic attribute cardinality (4-6 metric dims, 6-10 span attrs). Arc<Vec> zero-copy collect()."
+
+[benchmarks.ecommerce_catalog_browse]
+description = "GET /products: 1 span (10 attrs), 1 log (6 fields), 4 metric ops (5 dims each), 1 histogram"
+mean_ns = 3991
+median_ns = 3991
+allocations_approx = 25
+
+[benchmarks.ecommerce_product_detail]
+description = "GET /products/:id: 1 span (10 attrs), 1 log (6 fields), 2 counters (5 dims), 1 histogram (4 dims)"
+mean_ns = 3667
+median_ns = 3667
+allocations_approx = 20
+
+[benchmarks.ecommerce_search]
+description = "GET /search: 1 span (10 attrs), 1 log (7 fields), 3 counters (4-5 dims), 1 histogram (4 dims)"
+mean_ns = 3711
+median_ns = 3711
+allocations_approx = 22
+
+[benchmarks.ecommerce_cart_add]
+description = "POST /cart/add: 1 span (11 attrs), 2 logs (6+4 fields), 3 counters (3-5 dims), 1 histogram, 1 body size histogram"
+mean_ns = 4746
+median_ns = 4746
+allocations_approx = 28
+
+[benchmarks.ecommerce_checkout]
+description = "POST /checkout: 4 spans (11+3+2+2 attrs), 4 logs (8+6+4+3 fields), 5 counters (3-4 dims), 2 histograms, 1 revenue counter"
+mean_ns = 10194
+median_ns = 10194
+allocations_approx = 55
+
+[benchmarks.ecommerce_health]
+description = "GET /health: 1 span (6 attrs), no logs, no metrics"
+mean_ns = 1304
+median_ns = 1304
+allocations_approx = 6
+
+# Weights reflect realistic headless e-commerce traffic mix
+# (browse 40%, search 10%, detail 20%, cart 18%, checkout 8%, health 4%)
+[traffic_weights]
+ecommerce_catalog_browse = 0.40
+ecommerce_search = 0.10
+ecommerce_product_detail = 0.20
+ecommerce_cart_add = 0.18
+ecommerce_checkout = 0.08
+ecommerce_health = 0.04
+
+[cpu_budget]
+target_rps = 3000
+budget_percent = 10
+budget_us_per_request = 33.3
+weighted_avg_us = 4.423
+total_cpu_percent = 1.33
+verdict = "PASS"
