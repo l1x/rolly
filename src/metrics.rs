@@ -1,6 +1,28 @@
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
+
+const DEFAULT_MAX_CARDINALITY: usize = 2000;
+
+/// Pass-through hasher for pre-hashed u64 keys. Avoids double-hashing in
+/// `HashMap<u64, ..>` where keys are already well-distributed FNV-1a hashes.
+#[derive(Default)]
+struct IdentityHasher(u64);
+
+impl Hasher for IdentityHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, _bytes: &[u8]) {
+        unreachable!("IdentityHasher only supports write_u64");
+    }
+    fn write_u64(&mut self, n: u64) {
+        self.0 = n;
+    }
+}
+
+type IdentityBuildHasher = BuildHasherDefault<IdentityHasher>;
 
 /// Global metrics registry.
 static GLOBAL_REGISTRY: OnceLock<MetricsRegistry> = OnceLock::new();
@@ -71,6 +93,7 @@ pub struct MetricsRegistry {
     counters: RwLock<HashMap<String, Counter>>,
     gauges: RwLock<HashMap<String, Gauge>>,
     histograms: RwLock<HashMap<String, Histogram>>,
+    default_max_cardinality: usize,
 }
 
 impl Default for MetricsRegistry {
@@ -85,11 +108,32 @@ impl MetricsRegistry {
             counters: RwLock::new(HashMap::new()),
             gauges: RwLock::new(HashMap::new()),
             histograms: RwLock::new(HashMap::new()),
+            default_max_cardinality: DEFAULT_MAX_CARDINALITY,
+        }
+    }
+
+    /// Create a registry with a custom default cardinality limit for all metrics.
+    pub fn with_max_cardinality(max_cardinality: usize) -> Self {
+        Self {
+            counters: RwLock::new(HashMap::new()),
+            gauges: RwLock::new(HashMap::new()),
+            histograms: RwLock::new(HashMap::new()),
+            default_max_cardinality: max_cardinality,
         }
     }
 
     /// Get or create a counter by name.
     pub fn counter(&self, name: &str, description: &str) -> Counter {
+        self.counter_with_max_cardinality(name, description, self.default_max_cardinality)
+    }
+
+    /// Get or create a counter by name with a per-metric cardinality limit.
+    pub fn counter_with_max_cardinality(
+        &self,
+        name: &str,
+        description: &str,
+        max_cardinality: usize,
+    ) -> Counter {
         // Fast path: read lock
         {
             let counters = self.counters.read().unwrap();
@@ -105,7 +149,9 @@ impl MetricsRegistry {
                 inner: Arc::new(CounterInner {
                     name: name.to_string(),
                     description: description.to_string(),
-                    data: Mutex::new(HashMap::new()),
+                    max_cardinality,
+                    overflow_warned: AtomicBool::new(false),
+                    data: Mutex::new(HashMap::with_hasher(IdentityBuildHasher::default())),
                 }),
             })
             .clone()
@@ -113,6 +159,16 @@ impl MetricsRegistry {
 
     /// Get or create a gauge by name.
     pub fn gauge(&self, name: &str, description: &str) -> Gauge {
+        self.gauge_with_max_cardinality(name, description, self.default_max_cardinality)
+    }
+
+    /// Get or create a gauge by name with a per-metric cardinality limit.
+    pub fn gauge_with_max_cardinality(
+        &self,
+        name: &str,
+        description: &str,
+        max_cardinality: usize,
+    ) -> Gauge {
         // Fast path: read lock
         {
             let gauges = self.gauges.read().unwrap();
@@ -128,7 +184,9 @@ impl MetricsRegistry {
                 inner: Arc::new(GaugeInner {
                     name: name.to_string(),
                     description: description.to_string(),
-                    data: Mutex::new(HashMap::new()),
+                    max_cardinality,
+                    overflow_warned: AtomicBool::new(false),
+                    data: Mutex::new(HashMap::with_hasher(IdentityBuildHasher::default())),
                 }),
             })
             .clone()
@@ -137,6 +195,23 @@ impl MetricsRegistry {
     /// Get or create a histogram by name.
     /// Boundaries are sorted and deduplicated at creation time.
     pub fn histogram(&self, name: &str, description: &str, boundaries: &[f64]) -> Histogram {
+        self.histogram_with_max_cardinality(
+            name,
+            description,
+            boundaries,
+            self.default_max_cardinality,
+        )
+    }
+
+    /// Get or create a histogram by name with a per-metric cardinality limit.
+    /// Boundaries are sorted and deduplicated at creation time.
+    pub fn histogram_with_max_cardinality(
+        &self,
+        name: &str,
+        description: &str,
+        boundaries: &[f64],
+        max_cardinality: usize,
+    ) -> Histogram {
         // Fast path: read lock
         {
             let histograms = self.histograms.read().unwrap();
@@ -156,7 +231,9 @@ impl MetricsRegistry {
                     name: name.to_string(),
                     description: description.to_string(),
                     boundaries: sorted,
-                    data: Mutex::new(HashMap::new()),
+                    max_cardinality,
+                    overflow_warned: AtomicBool::new(false),
+                    data: Mutex::new(HashMap::with_hasher(IdentityBuildHasher::default())),
                 }),
             })
             .clone()
@@ -237,14 +314,29 @@ impl MetricsRegistry {
     }
 }
 
-/// Compute a hash key for a sorted set of attribute pairs.
-fn attrs_hash(attrs: &[(&str, &str)]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    for (k, v) in attrs {
-        k.hash(&mut hasher);
-        v.hash(&mut hasher);
+/// Order-independent hash of attribute pairs using commutative wrapping-add of
+/// per-pair FNV-1a hashes. Single pass, zero allocations.
+fn attrs_hash_unordered(attrs: &[(&str, &str)]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut combined: u64 = 0;
+    for &(k, v) in attrs {
+        let mut h: u64 = FNV_OFFSET;
+        for byte in k.as_bytes() {
+            h ^= *byte as u64;
+            h = h.wrapping_mul(FNV_PRIME);
+        }
+        // separator so ("ab","c") != ("a","bc")
+        h ^= 0xff;
+        h = h.wrapping_mul(FNV_PRIME);
+        for byte in v.as_bytes() {
+            h ^= *byte as u64;
+            h = h.wrapping_mul(FNV_PRIME);
+        }
+        combined = combined.wrapping_add(h);
     }
-    hasher.finish()
+    combined
 }
 
 /// Sort and own attribute pairs, wrapped in Arc for zero-copy snapshots.
@@ -286,6 +378,10 @@ fn current_trace_context() -> Option<([u8; 16], [u8; 8])> {
 /// Capture an exemplar from the current trace context if available.
 /// Skips all-zero trace_ids (no active trace).
 fn capture_exemplar(value: ExemplarValue) -> Option<Exemplar> {
+    // Fast bail: single Relaxed atomic load (~1ns) when no tracing subscriber is installed.
+    if !tracing::dispatcher::has_been_set() {
+        return None;
+    }
     let (trace_id, span_id) = current_trace_context()?;
     if trace_id == [0u8; 16] {
         return None;
@@ -307,7 +403,9 @@ fn capture_exemplar(value: ExemplarValue) -> Option<Exemplar> {
 struct CounterInner {
     name: String,
     description: String,
-    data: Mutex<HashMap<u64, CounterDataPoint>>,
+    max_cardinality: usize,
+    overflow_warned: AtomicBool,
+    data: Mutex<HashMap<u64, CounterDataPoint, IdentityBuildHasher>>,
 }
 
 /// A monotonic u64 counter. Clone is cheap (Arc).
@@ -320,13 +418,25 @@ impl Counter {
     /// Add a value to the counter for the given attribute set.
     pub fn add(&self, value: u64, attrs: &[(&str, &str)]) {
         let exemplar = capture_exemplar(ExemplarValue::Int(value as i64));
-        let mut sorted = attrs.to_vec();
-        sorted.sort();
-        let key = attrs_hash(&sorted);
+        let key = if attrs.is_empty() { 0 } else { attrs_hash_unordered(attrs) };
         let mut data = self.inner.data.lock().unwrap();
+        if !data.contains_key(&key) && data.len() >= self.inner.max_cardinality {
+            if !self
+                .inner
+                .overflow_warned
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                tracing::warn!(
+                    metric = self.inner.name,
+                    limit = self.inner.max_cardinality,
+                    "metric cardinality limit reached, dropping new attribute sets"
+                );
+            }
+            return;
+        }
         let entry = data
             .entry(key)
-            .or_insert_with(|| (owned_attrs(&sorted), 0, None));
+            .or_insert_with(|| (owned_attrs(attrs), 0, None));
         entry.1 += value as i64;
         if exemplar.is_some() {
             entry.2 = exemplar;
@@ -339,7 +449,9 @@ impl Counter {
 struct GaugeInner {
     name: String,
     description: String,
-    data: Mutex<HashMap<u64, GaugeDataPoint>>,
+    max_cardinality: usize,
+    overflow_warned: AtomicBool,
+    data: Mutex<HashMap<u64, GaugeDataPoint, IdentityBuildHasher>>,
 }
 
 /// A last-value f64 gauge. Clone is cheap (Arc).
@@ -352,13 +464,25 @@ impl Gauge {
     /// Set the gauge to a value for the given attribute set.
     pub fn set(&self, value: f64, attrs: &[(&str, &str)]) {
         let exemplar = capture_exemplar(ExemplarValue::Double(value));
-        let mut sorted = attrs.to_vec();
-        sorted.sort();
-        let key = attrs_hash(&sorted);
+        let key = if attrs.is_empty() { 0 } else { attrs_hash_unordered(attrs) };
         let mut data = self.inner.data.lock().unwrap();
+        if !data.contains_key(&key) && data.len() >= self.inner.max_cardinality {
+            if !self
+                .inner
+                .overflow_warned
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                tracing::warn!(
+                    metric = self.inner.name,
+                    limit = self.inner.max_cardinality,
+                    "metric cardinality limit reached, dropping new attribute sets"
+                );
+            }
+            return;
+        }
         let entry = data
             .entry(key)
-            .or_insert_with(|| (owned_attrs(&sorted), 0.0, None));
+            .or_insert_with(|| (owned_attrs(attrs), 0.0, None));
         entry.1 = value;
         if exemplar.is_some() {
             entry.2 = exemplar;
@@ -382,7 +506,9 @@ struct HistogramInner {
     name: String,
     description: String,
     boundaries: Vec<f64>,
-    data: Mutex<HashMap<u64, HistogramEntry>>,
+    max_cardinality: usize,
+    overflow_warned: AtomicBool,
+    data: Mutex<HashMap<u64, HistogramEntry, IdentityBuildHasher>>,
 }
 
 /// A histogram with client-side bucketing. Clone is cheap (Arc).
@@ -396,14 +522,26 @@ impl Histogram {
     pub fn observe(&self, value: f64, attrs: &[(&str, &str)]) {
         let exemplar = capture_exemplar(ExemplarValue::Double(value));
         let bucket_idx = self.inner.boundaries.partition_point(|&b| b <= value);
-        let mut sorted = attrs.to_vec();
-        sorted.sort();
-        let key = attrs_hash(&sorted);
+        let key = if attrs.is_empty() { 0 } else { attrs_hash_unordered(attrs) };
         let mut data = self.inner.data.lock().unwrap();
+        if !data.contains_key(&key) && data.len() >= self.inner.max_cardinality {
+            if !self
+                .inner
+                .overflow_warned
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                tracing::warn!(
+                    metric = self.inner.name,
+                    limit = self.inner.max_cardinality,
+                    "metric cardinality limit reached, dropping new attribute sets"
+                );
+            }
+            return;
+        }
         let entry = data.entry(key).or_insert_with(|| {
             let num_buckets = self.inner.boundaries.len() + 1;
             (
-                owned_attrs(&sorted),
+                owned_attrs(attrs),
                 HistogramState {
                     bucket_counts: vec![0; num_buckets],
                     sum: 0.0,
@@ -727,6 +865,114 @@ mod tests {
                 assert!(data_points[0].2.is_none());
             }
             _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn cardinality_limit_drops_excess() {
+        let registry = MetricsRegistry::new();
+        let c = registry.counter_with_max_cardinality("limited", "test", 3);
+        c.add(1, &[("k", "a")]);
+        c.add(1, &[("k", "b")]);
+        c.add(1, &[("k", "c")]);
+        c.add(1, &[("k", "d")]); // should be dropped
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert_eq!(data_points.len(), 3);
+            }
+            _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn cardinality_limit_allows_existing_keys() {
+        let registry = MetricsRegistry::new();
+        let c = registry.counter_with_max_cardinality("limited2", "test", 2);
+        c.add(1, &[("k", "a")]);
+        c.add(1, &[("k", "b")]);
+        // At limit now — new keys dropped, but existing keys still accumulate
+        c.add(1, &[("k", "c")]); // dropped
+        c.add(5, &[("k", "a")]); // existing key — should work
+        c.add(3, &[("k", "b")]); // existing key — should work
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert_eq!(data_points.len(), 2);
+                let total: i64 = data_points.iter().map(|(_, v, _)| v).sum();
+                assert_eq!(total, 10); // 1+5 + 1+3
+            }
+            _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn per_metric_overrides_global() {
+        let registry = MetricsRegistry::with_max_cardinality(100);
+        let c = registry.counter_with_max_cardinality("override", "test", 2);
+        c.add(1, &[("k", "a")]);
+        c.add(1, &[("k", "b")]);
+        c.add(1, &[("k", "c")]); // dropped — per-metric limit is 2
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert_eq!(data_points.len(), 2);
+            }
+            _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn default_cardinality_is_2000() {
+        let registry = MetricsRegistry::new();
+        let c = registry.counter("big", "test");
+        for i in 0..2000 {
+            c.add(1, &[("k", &i.to_string())]);
+        }
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Counter { data_points, .. } => {
+                assert_eq!(data_points.len(), 2000);
+            }
+            _ => panic!("expected Counter"),
+        }
+    }
+
+    #[test]
+    fn gauge_cardinality_limit() {
+        let registry = MetricsRegistry::new();
+        let g = registry.gauge_with_max_cardinality("g_limited", "test", 2);
+        g.set(1.0, &[("k", "a")]);
+        g.set(2.0, &[("k", "b")]);
+        g.set(3.0, &[("k", "c")]); // dropped
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Gauge { data_points, .. } => {
+                assert_eq!(data_points.len(), 2);
+            }
+            _ => panic!("expected Gauge"),
+        }
+    }
+
+    #[test]
+    fn histogram_cardinality_limit() {
+        let registry = MetricsRegistry::new();
+        let h = registry.histogram_with_max_cardinality("h_limited", "test", &[10.0], 2);
+        h.observe(1.0, &[("k", "a")]);
+        h.observe(2.0, &[("k", "b")]);
+        h.observe(3.0, &[("k", "c")]); // dropped
+
+        let snapshots = registry.collect();
+        match &snapshots[0] {
+            MetricSnapshot::Histogram { data_points, .. } => {
+                assert_eq!(data_points.len(), 2);
+            }
+            _ => panic!("expected Histogram"),
         }
     }
 }

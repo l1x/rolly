@@ -35,6 +35,9 @@ libc = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+opentelemetry = { version = "0.31", features = ["metrics"] }
+opentelemetry_sdk = { version = "0.31", features = ["metrics", "rt-tokio", "experimental_metrics_custom_reader"] }
+inferno = "0.12"
 opentelemetry-proto = { version = "0.31", features = ["gen-tonic-messages"] }
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series"] }
 proptest = "1"
@@ -66,6 +69,16 @@ required-features = ["_bench"]
 
 [[bench]]
 name = "realistic_scenario"
+harness = false
+required-features = ["_bench"]
+
+[[bench]]
+name = "comparison_otel"
+harness = false
+required-features = ["_bench"]
+
+[[bench]]
+name = "generate_flamecharts"
 harness = false
 required-features = ["_bench"]
 
