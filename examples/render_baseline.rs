@@ -107,7 +107,8 @@ fn main() {
         .iter()
         .map(|(_, b, w)| (b.mean_ns as f64 / 1000.0) * w)
         .sum();
-    let total_cpu_pct = (weighted_avg_us * baseline.cpu_budget.target_rps as f64) / 1_000_000.0 * 100.0;
+    let total_cpu_pct =
+        (weighted_avg_us * baseline.cpu_budget.target_rps as f64) / 1_000_000.0 * 100.0;
     let verdict = if all_zero {
         "PENDING"
     } else if total_cpu_pct <= baseline.cpu_budget.budget_percent {
@@ -159,7 +160,9 @@ fn main() {
     root.draw(&Text::new(
         format!("Date: {}", baseline.metadata.date),
         (SVG_W as i32 / 2, 50),
-        ("sans-serif", 14).into_font().color(&RGBColor(100, 100, 100)),
+        ("sans-serif", 14)
+            .into_font()
+            .color(&RGBColor(100, 100, 100)),
     ))
     .unwrap();
 
@@ -208,7 +211,10 @@ fn main() {
             .unwrap()
             .label(format!("{:.1}us budget", BUDGET_US))
             .legend(|(x, y)| {
-                Rectangle::new([(x, y - 5), (x + 15, y + 5)], RGBColor(244, 67, 54).filled())
+                Rectangle::new(
+                    [(x, y - 5), (x + 15, y + 5)],
+                    RGBColor(244, 67, 54).filled(),
+                )
             });
 
         // Bars
@@ -264,7 +270,10 @@ fn main() {
             });
 
         let mut chart = ChartBuilder::on(panel)
-            .caption("Throughput Capacity (ops/sec per endpoint)", ("sans-serif", 18))
+            .caption(
+                "Throughput Capacity (ops/sec per endpoint)",
+                ("sans-serif", 18),
+            )
             .margin(10)
             .x_label_area_size(50)
             .y_label_area_size(160)
@@ -295,7 +304,10 @@ fn main() {
             .unwrap()
             .label(format!("{} req/s target", baseline.cpu_budget.target_rps))
             .legend(|(x, y)| {
-                Rectangle::new([(x, y - 5), (x + 15, y + 5)], RGBColor(244, 67, 54).filled())
+                Rectangle::new(
+                    [(x, y - 5), (x + 15, y + 5)],
+                    RGBColor(244, 67, 54).filled(),
+                )
             });
 
         // Bars
@@ -329,7 +341,8 @@ fn main() {
             .iter()
             .map(|(name, bench, weight)| {
                 let us = bench.mean_ns as f64 / 1000.0;
-                let pct = (us * weight * baseline.cpu_budget.target_rps as f64) / 1_000_000.0 * 100.0;
+                let pct =
+                    (us * weight * baseline.cpu_budget.target_rps as f64) / 1_000_000.0 * 100.0;
                 (*name, pct)
             })
             .collect();
@@ -340,7 +353,10 @@ fn main() {
 
         let mut chart = ChartBuilder::on(panel)
             .caption(
-                format!("CPU Budget at {} req/s (% of one core)", baseline.cpu_budget.target_rps),
+                format!(
+                    "CPU Budget at {} req/s (% of one core)",
+                    baseline.cpu_budget.target_rps
+                ),
                 ("sans-serif", 18),
             )
             .margin(10)
@@ -354,12 +370,10 @@ fn main() {
             .disable_y_mesh()
             .x_desc("CPU %")
             .y_labels(3)
-            .y_label_formatter(&|y| {
-                match y {
-                    0 => "Observability".to_string(),
-                    1 => "Budget".to_string(),
-                    _ => String::new(),
-                }
+            .y_label_formatter(&|y| match y {
+                0 => "Observability".to_string(),
+                1 => "Budget".to_string(),
+                _ => String::new(),
             })
             .draw()
             .unwrap();
@@ -373,7 +387,10 @@ fn main() {
             .unwrap()
             .label(format!("{}% budget", budget_pct))
             .legend(|(x, y)| {
-                Rectangle::new([(x, y - 5), (x + 15, y + 5)], RGBColor(244, 67, 54).filled())
+                Rectangle::new(
+                    [(x, y - 5), (x + 15, y + 5)],
+                    RGBColor(244, 67, 54).filled(),
+                )
             });
 
         // Stacked segments for observability
@@ -479,9 +496,7 @@ fn main() {
                 .draw(&Text::new(
                     "NOTE: All values are 0 — run benchmarks and update baseline.toml".to_string(),
                     (30, y),
-                    ("monospace", 14)
-                        .into_font()
-                        .color(&RGBColor(244, 67, 54)),
+                    ("monospace", 14).into_font().color(&RGBColor(244, 67, 54)),
                 ))
                 .unwrap();
         }

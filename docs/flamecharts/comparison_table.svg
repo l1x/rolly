@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 336" font-family="'Inter','SF Pro Display',system-ui,sans-serif" font-size="14">
+<style>
+  .title { font-size: 17px; font-weight: 700; fill: #111827; letter-spacing: -0.02em; }
+  .subtitle { font-size: 12px; fill: #9ca3af; }
+  .hdr { font-size: 12px; font-weight: 600; fill: #6b7280; }
+  .scenario { font-size: 14px; fill: #111827; font-weight: 500; }
+  .v { font-size: 13px; fill: #374151; text-anchor: end; font-variant-numeric: tabular-nums; }
+  .best { fill: #059669; font-weight: 600; }
+  .worst { fill: #dc2626; }
+  .neutral { fill: #6b7280; }
+  .grid { stroke: #e5e7eb; stroke-width: 1; }
+  .grid-thick { stroke: #d1d5db; stroke-width: 1.5; }
+</style>
+<rect width="760" height="336" fill="#ffffff"/>
+<text x="20" y="28" class="title">ro11y vs OpenTelemetry SDK 0.31 — Criterion Benchmarks (95% CI)</text>
+<text x="20" y="48" class="subtitle">Values show mean ± CI half-width in nanoseconds. Green = ro11y faster, red = ro11y slower.</text>
+<rect x="0" y="70" width="760" height="36" fill="#f8fafc"/>
+<line x1="0" y1="106" x2="760" y2="106" class="grid-thick"/>
+<text x="32" y="93" class="hdr" text-anchor="start">Scenario</text>
+<text x="418" y="93" class="hdr" text-anchor="end">ro11y (ns)</text>
+<text x="588" y="93" class="hdr" text-anchor="end">OTel SDK (ns)</text>
+<text x="728" y="93" class="hdr" text-anchor="end">Speedup</text>
+<line x1="0" y1="146" x2="760" y2="146" class="grid"/>
+<text x="32" y="132" class="scenario">Counter (3 attrs)</text>
+<text x="418" y="132" class="v">26.8 ± 0.4</text>
+<text x="588" y="132" class="v">86.4 ± 0.2</text>
+<text x="728" y="132" class="v best">3.2x faster</text>
+<rect x="0" y="146" width="760" height="40" fill="#f9fafb"/>
+<line x1="0" y1="186" x2="760" y2="186" class="grid"/>
+<text x="32" y="172" class="scenario">Counter (5 attrs)</text>
+<text x="418" y="172" class="v">43.1 ± 0.1</text>
+<text x="588" y="172" class="v">132.8 ± 0.3</text>
+<text x="728" y="172" class="v best">3.1x faster</text>
+<line x1="0" y1="226" x2="760" y2="226" class="grid"/>
+<text x="32" y="212" class="scenario">Counter (no attrs)</text>
+<text x="418" y="212" class="v">9.6 ± 0.0</text>
+<text x="588" y="212" class="v">4.9 ± 0.0</text>
+<text x="728" y="212" class="v worst">2.0x slower</text>
+<rect x="0" y="226" width="760" height="40" fill="#f9fafb"/>
+<line x1="0" y1="266" x2="760" y2="266" class="grid"/>
+<text x="32" y="252" class="scenario">Histogram (3 attrs)</text>
+<text x="418" y="252" class="v">29.2 ± 0.0</text>
+<text x="588" y="252" class="v">88.1 ± 0.2</text>
+<text x="728" y="252" class="v best">3.0x faster</text>
+<line x1="0" y1="306" x2="760" y2="306" class="grid"/>
+<text x="32" y="292" class="scenario">Histogram (5 attrs)</text>
+<text x="418" y="292" class="v">47.2 ± 0.1</text>
+<text x="588" y="292" class="v">139.5 ± 0.3</text>
+<text x="728" y="292" class="v best">3.0x faster</text>
+<line x1="260" y1="70" x2="260" y2="306" class="grid"/>
+<line x1="430" y1="70" x2="430" y2="306" class="grid"/>
+<line x1="600" y1="70" x2="600" y2="306" class="grid"/>
+<line x1="740" y1="70" x2="740" y2="306" class="grid"/>
+<text x="20" y="324" class="subtitle">Source: criterion (cargo bench --features _bench -- comparison). CI = 95% confidence interval on mean.</text>
+</svg>

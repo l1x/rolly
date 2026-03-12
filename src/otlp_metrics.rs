@@ -305,7 +305,11 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Gauge {
             name: "cpu_usage".to_string(),
             description: "CPU usage percentage".to_string(),
-            data_points: vec![(Arc::new(vec![("core".to_string(), "0".to_string())]), 75.5, None)],
+            data_points: vec![(
+                Arc::new(vec![("core".to_string(), "0".to_string())]),
+                75.5,
+                None,
+            )],
         }];
 
         let bytes = encode_export_metrics_request(
@@ -577,7 +581,11 @@ mod tests {
         let snapshots = vec![MetricSnapshot::Counter {
             name: "c".to_string(),
             description: String::new(),
-            data_points: vec![(Arc::new(vec![("method".to_string(), "GET".to_string())]), 1, None)],
+            data_points: vec![(
+                Arc::new(vec![("method".to_string(), "GET".to_string())]),
+                1,
+                None,
+            )],
         }];
 
         let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);

@@ -1,140 +1,40 @@
-//! Generate flamechart SVGs, differential flamegraph, allocation counts, and
-//! latency measurements for ro11y metrics hot-path analysis.
+//! Generate flamechart SVGs and criterion-based comparison outputs.
 //!
 //! Produces in `docs/flamecharts/`:
-//! - `flamechart_before.svg`  — old ro11y Counter::add (pre-optimization)
 //! - `flamechart_after.svg`   — optimized ro11y Counter::add
 //! - `flamechart_otel.svg`    — OpenTelemetry SDK 0.31 Counter::add
-//! - `flamechart_diff.svg`    — differential: before → after
-//!
-//! Also prints allocation counts and latency per operation.
+//! - `comparison_table.svg`   — criterion benchmark comparison with 95% CIs
+//! - `benchmark_results.toml` — machine-readable criterion results
 //!
 //! Run: `cargo bench --features _bench --bench generate_flamecharts`
 //!
-//! Requires macOS `sample` command (ships with Xcode CLI tools).
+//! Requires:
+//! - macOS `sample` command (ships with Xcode CLI tools) for flamecharts
+//! - Prior `cargo bench --features _bench -- comparison` run for criterion data
 
-use std::alloc::{GlobalAlloc, Layout, System};
+use std::fmt::Write;
 use std::hint::black_box;
 use std::io::{BufReader, Cursor};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-
-// ── Counting allocator ─────────────────────────────────────────────────
-
-static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
-static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
-static DEALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
-
-struct CountingAlloc;
-
-unsafe impl GlobalAlloc for CountingAlloc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        unsafe { System.alloc(layout) }
-    }
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        DEALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        unsafe { System.dealloc(ptr, layout) }
-    }
-}
-
-#[global_allocator]
-static GLOBAL: CountingAlloc = CountingAlloc;
-
-fn reset_alloc() {
-    ALLOC_COUNT.store(0, Ordering::Relaxed);
-    ALLOC_BYTES.store(0, Ordering::Relaxed);
-    DEALLOC_COUNT.store(0, Ordering::Relaxed);
-}
-
-fn read_alloc() -> (u64, u64, u64) {
-    (
-        ALLOC_COUNT.load(Ordering::Relaxed),
-        ALLOC_BYTES.load(Ordering::Relaxed),
-        DEALLOC_COUNT.load(Ordering::Relaxed),
-    )
-}
 
 // ── Constants ──────────────────────────────────────────────────────────
 
 const PROFILE_SECS: u64 = 12;
 const SAMPLE_DELAY_SECS: u64 = 3;
 const SAMPLE_SECS: &str = "7";
-const MEASURE_ITERS: u64 = 1_000_000;
-const WARMUP_ITERS: u64 = 10_000;
 
 // ── Main ───────────────────────────────────────────────────────────────
 
 fn main() {
     match std::env::args().nth(1).as_deref() {
-        Some("--before") => profile_before(),
         Some("--after") => profile_after(),
         Some("--otel") => profile_otel(),
-        Some("--measure") => measure_all(),
         _ => generate_all(),
     }
 }
 
-// ── Before (old algorithm) ─────────────────────────────────────────────
-
-fn profile_before() {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
-    let data: Mutex<HashMap<u64, i64>> = Mutex::new(HashMap::new());
-    let warmup: &[(&str, &str)] = &[("method", "GET"), ("status", "200"), ("region", "us-east-1")];
-    {
-        let mut sorted = attrs_to_vec(warmup);
-        sort_attrs(&mut sorted);
-        let key = attrs_hash_siphash(&sorted);
-        data.lock().unwrap().insert(key, 0);
-    }
-
-    let deadline = Instant::now() + Duration::from_secs(PROFILE_SECS);
-    while Instant::now() < deadline {
-        for _ in 0..1000 {
-            let attrs =
-                black_box(&[("method", "GET"), ("status", "200"), ("region", "us-east-1")][..]);
-            let value = black_box(1u64);
-            capture_exemplar_span_current();
-            let mut sorted = attrs_to_vec(attrs);
-            sort_attrs(&mut sorted);
-            let key = attrs_hash_siphash(&sorted);
-            let mut map = data.lock().unwrap();
-            *map.entry(key).or_insert(0) += value as i64;
-        }
-    }
-}
-
-#[inline(never)]
-fn capture_exemplar_span_current() {
-    let _span = black_box(tracing::Span::current());
-}
-
-#[inline(never)]
-fn attrs_to_vec<'a>(attrs: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
-    attrs.to_vec()
-}
-
-#[inline(never)]
-fn sort_attrs(attrs: &mut [(&str, &str)]) {
-    attrs.sort();
-}
-
-#[inline(never)]
-fn attrs_hash_siphash(attrs: &[(&str, &str)]) -> u64 {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    for (k, v) in attrs {
-        k.hash(&mut hasher);
-        v.hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-// ── After (optimized) ──────────────────────────────────────────────────
+// ── Profiling: optimized ro11y ─────────────────────────────────────────
 
 fn profile_after() {
     use ro11y::bench::*;
@@ -142,7 +42,11 @@ fn profile_after() {
     let counter = registry.counter("test", "test");
     counter.add(
         1,
-        &[("method", "GET"), ("status", "200"), ("region", "us-east-1")],
+        &[
+            ("method", "GET"),
+            ("status", "200"),
+            ("region", "us-east-1"),
+        ],
     );
 
     let deadline = Instant::now() + Duration::from_secs(PROFILE_SECS);
@@ -150,13 +54,17 @@ fn profile_after() {
         for _ in 0..1000 {
             counter.add(
                 black_box(1),
-                black_box(&[("method", "GET"), ("status", "200"), ("region", "us-east-1")]),
+                black_box(&[
+                    ("method", "GET"),
+                    ("status", "200"),
+                    ("region", "us-east-1"),
+                ]),
             );
         }
     }
 }
 
-// ── OTel SDK ───────────────────────────────────────────────────────────
+// ── Profiling: OTel SDK (fair — pre-built attrs) ──────────────────────
 
 fn profile_otel() {
     use opentelemetry::metrics::MeterProvider as _;
@@ -168,196 +76,423 @@ fn profile_otel() {
         .build();
     let meter = provider.meter("bench");
     let ctr = meter.u64_counter("test").build();
-    ctr.add(
-        1,
-        &[
-            KeyValue::new("method", "GET"),
-            KeyValue::new("status", "200"),
-            KeyValue::new("region", "us-east-1"),
-        ],
-    );
+
+    let attrs = vec![
+        KeyValue::new("method", "GET"),
+        KeyValue::new("status", "200"),
+        KeyValue::new("region", "us-east-1"),
+    ];
+    ctr.add(1, &attrs);
 
     let deadline = Instant::now() + Duration::from_secs(PROFILE_SECS);
     while Instant::now() < deadline {
         for _ in 0..1000 {
-            ctr.add(
-                black_box(1),
-                black_box(&[
-                    KeyValue::new("method", "GET"),
-                    KeyValue::new("status", "200"),
-                    KeyValue::new("region", "us-east-1"),
-                ]),
-            );
+            ctr.add(black_box(1), black_box(&attrs));
         }
     }
 }
 
-// ── Allocation + latency measurement ───────────────────────────────────
+// ── Criterion result types ─────────────────────────────────────────────
 
-fn measure_all() {
-    let attrs_ro11y: &[(&str, &str)] = &[
-        ("method", "GET"),
-        ("status", "200"),
-        ("region", "us-east-1"),
+#[derive(Debug)]
+struct BenchmarkResult {
+    mean_ns: f64,
+    ci_lower: f64,
+    ci_upper: f64,
+}
+
+#[derive(Debug)]
+struct BenchmarkGroup {
+    name: String,
+    ro11y: Option<BenchmarkResult>,
+    otel: Option<BenchmarkResult>,
+}
+
+// ── Read criterion JSON results ────────────────────────────────────────
+
+fn read_criterion_results() -> Vec<BenchmarkGroup> {
+    use serde_json::Value;
+
+    let base = std::path::Path::new("target/criterion");
+    if !base.exists() {
+        eprintln!("  WARNING: target/criterion/ not found. Run `cargo bench --features _bench -- comparison` first.");
+        return Vec::new();
+    }
+
+    let mut groups: std::collections::BTreeMap<String, BenchmarkGroup> =
+        std::collections::BTreeMap::new();
+
+    let entries: Vec<_> = std::fs::read_dir(base)
+        .expect("read target/criterion")
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with("comparison_"))
+        })
+        .collect();
+
+    for entry in entries {
+        let group_name = entry.file_name().to_string_lossy().to_string();
+
+        for variant_name in &["ro11y", "otel_sdk"] {
+            let estimates_path = entry
+                .path()
+                .join(variant_name)
+                .join("new")
+                .join("estimates.json");
+
+            if !estimates_path.exists() {
+                continue;
+            }
+
+            let data = match std::fs::read_to_string(&estimates_path) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("  WARNING: cannot read {}: {}", estimates_path.display(), e);
+                    continue;
+                }
+            };
+
+            let json: Value = match serde_json::from_str(&data) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!(
+                        "  WARNING: cannot parse {}: {}",
+                        estimates_path.display(),
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let mean = &json["mean"];
+            let point_estimate = mean["point_estimate"].as_f64().unwrap_or(0.0);
+            let ci = &mean["confidence_interval"];
+            let lower = ci["lower_bound"].as_f64().unwrap_or(0.0);
+            let upper = ci["upper_bound"].as_f64().unwrap_or(0.0);
+
+            let result = BenchmarkResult {
+                mean_ns: point_estimate,
+                ci_lower: lower,
+                ci_upper: upper,
+            };
+
+            let group = groups
+                .entry(group_name.clone())
+                .or_insert_with(|| BenchmarkGroup {
+                    name: group_name.clone(),
+                    ro11y: None,
+                    otel: None,
+                });
+
+            if *variant_name == "ro11y" {
+                group.ro11y = Some(result);
+            } else {
+                group.otel = Some(result);
+            }
+        }
+    }
+
+    groups.into_values().collect()
+}
+
+/// Pretty-print a criterion group name: "comparison_counter_3_attrs" -> "Counter (3 attrs)"
+fn pretty_group_name(raw: &str) -> String {
+    let s = raw.strip_prefix("comparison_").unwrap_or(raw);
+
+    // Split into parts: ["counter", "3", "attrs"] or ["counter", "no", "attrs"]
+    let parts: Vec<&str> = s.split('_').collect();
+
+    if parts.is_empty() {
+        return raw.to_string();
+    }
+
+    // Capitalize metric type
+    let metric_type = {
+        let mut c = parts[0].chars();
+        match c.next() {
+            None => String::new(),
+            Some(f) => f.to_uppercase().to_string() + c.as_str(),
+        }
+    };
+
+    // Check for "cold" suffix
+    let is_cold = parts.last() == Some(&"cold");
+    let attr_parts = if is_cold {
+        &parts[1..parts.len() - 1]
+    } else {
+        &parts[1..]
+    };
+
+    let attr_desc = attr_parts.join(" ");
+    let cold_suffix = if is_cold { " cold" } else { "" };
+
+    if attr_desc.is_empty() {
+        format!("{}{}", metric_type, cold_suffix)
+    } else {
+        format!("{} ({}{})", metric_type, attr_desc, cold_suffix)
+    }
+}
+
+// ── TOML output from criterion data ────────────────────────────────────
+
+fn write_criterion_toml(groups: &[BenchmarkGroup]) {
+    let mut t = String::with_capacity(2048);
+    t.push_str("# Source: criterion benchmark results\n");
+    t.push_str("# Run: cargo bench --features _bench -- comparison\n");
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let _ = write!(t, "generated_unix = {}\n\n", now);
+
+    for g in groups {
+        // Sanitize name for TOML key
+        let key = g.name.strip_prefix("comparison_").unwrap_or(&g.name);
+
+        let _ = writeln!(t, "[{}]", key);
+
+        if let Some(ref r) = g.ro11y {
+            let _ = writeln!(t, "ro11y_mean_ns = {:.1}", r.mean_ns);
+            let _ = writeln!(t, "ro11y_ci_lower = {:.1}", r.ci_lower);
+            let _ = writeln!(t, "ro11y_ci_upper = {:.1}", r.ci_upper);
+        }
+
+        if let Some(ref o) = g.otel {
+            let _ = writeln!(t, "otel_mean_ns = {:.1}", o.mean_ns);
+            let _ = writeln!(t, "otel_ci_lower = {:.1}", o.ci_lower);
+            let _ = writeln!(t, "otel_ci_upper = {:.1}", o.ci_upper);
+        }
+
+        t.push('\n');
+    }
+
+    let path = "docs/flamecharts/benchmark_results.toml";
+    std::fs::write(path, &t).expect("write benchmark_results.toml");
+    eprintln!("  Written: {} ({} bytes)", path, t.len());
+}
+
+// ── SVG comparison table with CIs ──────────────────────────────────────
+
+fn render_comparison_table_svg(groups: &[BenchmarkGroup]) {
+    // Columns: Scenario | ro11y (ns) | OTel SDK (ns) | Speedup
+    let col_x: [f64; 5] = [20.0, 260.0, 430.0, 600.0, 740.0];
+    let total_w = 760.0;
+    let row_h = 40.0;
+    let title_h = 70.0;
+    let hdr_h = 36.0;
+    let num_rows = groups.len() as f64;
+    let table_top = title_h;
+    let table_h = hdr_h + row_h * num_rows;
+    let total_h = title_h + table_h + 30.0;
+
+    let mut s = String::with_capacity(8192);
+
+    let _ = writeln!(
+        s,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\" \
+         font-family=\"'Inter','SF Pro Display',system-ui,sans-serif\" font-size=\"14\">",
+        total_w, total_h
+    );
+    s.push_str(concat!(
+        "<style>\n",
+        "  .title { font-size: 17px; font-weight: 700; fill: #111827; letter-spacing: -0.02em; }\n",
+        "  .subtitle { font-size: 12px; fill: #9ca3af; }\n",
+        "  .hdr { font-size: 12px; font-weight: 600; fill: #6b7280; }\n",
+        "  .scenario { font-size: 14px; fill: #111827; font-weight: 500; }\n",
+        "  .v { font-size: 13px; fill: #374151; text-anchor: end; font-variant-numeric: tabular-nums; }\n",
+        "  .best { fill: #059669; font-weight: 600; }\n",
+        "  .worst { fill: #dc2626; }\n",
+        "  .neutral { fill: #6b7280; }\n",
+        "  .grid { stroke: #e5e7eb; stroke-width: 1; }\n",
+        "  .grid-thick { stroke: #d1d5db; stroke-width: 1.5; }\n",
+        "</style>\n",
+    ));
+
+    // Background
+    let _ = writeln!(
+        s,
+        "<rect width=\"{}\" height=\"{}\" fill=\"#ffffff\"/>",
+        total_w, total_h
+    );
+
+    // Title
+    s.push_str(
+        "<text x=\"20\" y=\"28\" class=\"title\">\
+         ro11y vs OpenTelemetry SDK 0.31 \u{2014} Criterion Benchmarks (95% CI)</text>\n",
+    );
+    s.push_str(
+        "<text x=\"20\" y=\"48\" class=\"subtitle\">\
+         Values show mean \u{00b1} CI half-width in nanoseconds. \
+         Green = ro11y faster, red = ro11y slower.</text>\n",
+    );
+
+    // Header row background
+    let _ = writeln!(
+        s,
+        "<rect x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#f8fafc\"/>",
+        table_top, total_w, hdr_h
+    );
+
+    // Header bottom border
+    let hdr_line_y = table_top + hdr_h;
+    let _ = writeln!(
+        s,
+        "<line x1=\"0\" y1=\"{}\" x2=\"{}\" y2=\"{}\" class=\"grid-thick\"/>",
+        hdr_line_y, total_w, hdr_line_y
+    );
+
+    // Header labels
+    let headers = [
+        ("Scenario", "start"),
+        ("ro11y (ns)", "end"),
+        ("OTel SDK (ns)", "end"),
+        ("Speedup", "end"),
     ];
-
-    eprintln!(
-        "\n{:=<74}",
-        "= Allocation & Latency Measurement (Counter::add, 3 attrs) "
-    );
-    eprintln!(
-        "  {} iterations per variant, {} warmup\n",
-        MEASURE_ITERS, WARMUP_ITERS
-    );
-
-    // ── Before ──
-    let before = {
-        use std::collections::HashMap;
-        use std::hash::{DefaultHasher, Hash, Hasher};
-        use std::sync::Mutex;
-
-        let data: Mutex<HashMap<u64, i64>> = Mutex::new(HashMap::new());
-        // warmup — insert entry so hot path hits existing key
-        for _ in 0..WARMUP_ITERS {
-            let mut sorted = attrs_ro11y.to_vec();
-            sorted.sort();
-            let mut h = DefaultHasher::new();
-            for (k, v) in &sorted {
-                k.hash(&mut h);
-                v.hash(&mut h);
-            }
-            let key = h.finish();
-            let mut map = data.lock().unwrap();
-            *map.entry(key).or_insert(0) += 1i64;
-        }
-
-        reset_alloc();
-        let start = Instant::now();
-        for _ in 0..MEASURE_ITERS {
-            let attrs = black_box(attrs_ro11y);
-            let value = black_box(1u64);
-            let _span = tracing::Span::current();
-            let mut sorted = attrs.to_vec();
-            sorted.sort();
-            let mut h = DefaultHasher::new();
-            for (k, v) in &sorted {
-                k.hash(&mut h);
-                v.hash(&mut h);
-            }
-            let key = h.finish();
-            let mut map = data.lock().unwrap();
-            *map.entry(key).or_insert(0) += value as i64;
-        }
-        let elapsed = start.elapsed();
-        let (ac, ab, dc) = read_alloc();
-        MeasureResult {
-            label: "Before (old ro11y)",
-            elapsed,
-            allocs: ac,
-            alloc_bytes: ab,
-            deallocs: dc,
-        }
-    };
-
-    // ── After ──
-    let after = {
-        use ro11y::bench::*;
-        let registry = MetricsRegistry::new();
-        let counter = registry.counter("test", "test");
-        for _ in 0..WARMUP_ITERS {
-            counter.add(1, attrs_ro11y);
-        }
-
-        reset_alloc();
-        let start = Instant::now();
-        for _ in 0..MEASURE_ITERS {
-            counter.add(black_box(1), black_box(attrs_ro11y));
-        }
-        let elapsed = start.elapsed();
-        let (ac, ab, dc) = read_alloc();
-        MeasureResult {
-            label: "After (optimized ro11y)",
-            elapsed,
-            allocs: ac,
-            alloc_bytes: ab,
-            deallocs: dc,
-        }
-    };
-
-    // ── OTel ──
-    let otel = {
-        use opentelemetry::metrics::MeterProvider as _;
-        use opentelemetry::KeyValue;
-        use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
-
-        let provider = SdkMeterProvider::builder()
-            .with_reader(ManualReader::builder().build())
-            .build();
-        let meter = provider.meter("bench");
-        let ctr = meter.u64_counter("test").build();
-        let otel_attrs = [
-            KeyValue::new("method", "GET"),
-            KeyValue::new("status", "200"),
-            KeyValue::new("region", "us-east-1"),
-        ];
-        for _ in 0..WARMUP_ITERS {
-            ctr.add(1, &otel_attrs);
-        }
-
-        reset_alloc();
-        let start = Instant::now();
-        for _ in 0..MEASURE_ITERS {
-            ctr.add(
-                black_box(1),
-                black_box(&[
-                    KeyValue::new("method", "GET"),
-                    KeyValue::new("status", "200"),
-                    KeyValue::new("region", "us-east-1"),
-                ]),
-            );
-        }
-        let elapsed = start.elapsed();
-        let (ac, ab, dc) = read_alloc();
-        MeasureResult {
-            label: "OTel SDK 0.31",
-            elapsed,
-            allocs: ac,
-            alloc_bytes: ab,
-            deallocs: dc,
-        }
-    };
-
-    // ── Print results ──
-    eprintln!(
-        "  {:<24} {:>10} {:>12} {:>14} {:>12}",
-        "Variant", "Latency", "Allocs/op", "Bytes/op", "Frees/op"
-    );
-    eprintln!("  {:-<72}", "");
-    for r in [&before, &after, &otel] {
-        r.print();
-    }
-    eprintln!();
-}
-
-struct MeasureResult {
-    label: &'static str,
-    elapsed: Duration,
-    allocs: u64,
-    alloc_bytes: u64,
-    deallocs: u64,
-}
-
-impl MeasureResult {
-    fn print(&self) {
-        let ns_per_op = self.elapsed.as_nanos() as f64 / MEASURE_ITERS as f64;
-        let allocs_per_op = self.allocs as f64 / MEASURE_ITERS as f64;
-        let bytes_per_op = self.alloc_bytes as f64 / MEASURE_ITERS as f64;
-        let frees_per_op = self.deallocs as f64 / MEASURE_ITERS as f64;
-        eprintln!(
-            "  {:<24} {:>7.1} ns {:>10.2}/op {:>10.0} B/op {:>10.2}/op",
-            self.label, ns_per_op, allocs_per_op, bytes_per_op, frees_per_op
+    let hdr_y = table_top + 23.0;
+    for (i, (label, anchor)) in headers.iter().enumerate() {
+        let hx = if *anchor == "start" {
+            col_x[i] + 12.0
+        } else {
+            col_x[i + 1] - 12.0
+        };
+        let _ = writeln!(
+            s,
+            "<text x=\"{}\" y=\"{}\" class=\"hdr\" text-anchor=\"{}\">{}</text>",
+            hx, hdr_y, anchor, label
         );
     }
+
+    // Data rows
+    for (idx, g) in groups.iter().enumerate() {
+        let ry = table_top + hdr_h + (idx as f64) * row_h;
+
+        // Alternating row background
+        if idx % 2 == 1 {
+            let _ = writeln!(
+                s,
+                "<rect x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#f9fafb\"/>",
+                ry, total_w, row_h
+            );
+        }
+
+        // Row bottom border
+        let _ = writeln!(
+            s,
+            "<line x1=\"0\" y1=\"{}\" x2=\"{}\" y2=\"{}\" class=\"grid\"/>",
+            ry + row_h,
+            total_w,
+            ry + row_h
+        );
+
+        let ty = ry + 26.0;
+
+        // Col 0: Scenario name
+        let pretty = pretty_group_name(&g.name);
+        let _ = writeln!(
+            s,
+            "<text x=\"{}\" y=\"{}\" class=\"scenario\">{}</text>",
+            col_x[0] + 12.0,
+            ty,
+            pretty
+        );
+
+        // Col 1: ro11y mean +/- CI
+        if let Some(ref r) = g.ro11y {
+            let ci_half = (r.ci_upper - r.ci_lower) / 2.0;
+            let _ = writeln!(
+                s,
+                "<text x=\"{}\" y=\"{}\" class=\"v\">{:.1} \u{00b1} {:.1}</text>",
+                col_x[2] - 12.0,
+                ty,
+                r.mean_ns,
+                ci_half
+            );
+        } else {
+            let _ = writeln!(
+                s,
+                "<text x=\"{}\" y=\"{}\" class=\"v neutral\">\u{2014}</text>",
+                col_x[2] - 12.0,
+                ty
+            );
+        }
+
+        // Col 2: OTel mean +/- CI
+        if let Some(ref o) = g.otel {
+            let ci_half = (o.ci_upper - o.ci_lower) / 2.0;
+            let _ = writeln!(
+                s,
+                "<text x=\"{}\" y=\"{}\" class=\"v\">{:.1} \u{00b1} {:.1}</text>",
+                col_x[3] - 12.0,
+                ty,
+                o.mean_ns,
+                ci_half
+            );
+        } else {
+            let _ = writeln!(
+                s,
+                "<text x=\"{}\" y=\"{}\" class=\"v neutral\">\u{2014}</text>",
+                col_x[3] - 12.0,
+                ty
+            );
+        }
+
+        // Col 3: Speedup
+        if let (Some(ref r), Some(ref o)) = (&g.ro11y, &g.otel) {
+            let speedup = o.mean_ns / r.mean_ns;
+            let (class, label) = if speedup >= 1.05 {
+                ("v best", format!("{:.1}x faster", speedup))
+            } else if speedup <= 0.95 {
+                ("v worst", format!("{:.1}x slower", 1.0 / speedup))
+            } else {
+                ("v neutral", "~parity".to_string())
+            };
+            let _ = writeln!(
+                s,
+                "<text x=\"{}\" y=\"{}\" class=\"{}\">{}</text>",
+                col_x[4] - 12.0,
+                ty,
+                class,
+                label
+            );
+        } else {
+            let _ = writeln!(
+                s,
+                "<text x=\"{}\" y=\"{}\" class=\"v neutral\">\u{2014}</text>",
+                col_x[4] - 12.0,
+                ty
+            );
+        }
+    }
+
+    // Vertical column separators
+    let grid_top = table_top;
+    let grid_bot = table_top + table_h;
+    for &cx in &col_x[1..] {
+        let _ = writeln!(
+            s,
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" class=\"grid\"/>",
+            cx, grid_top, cx, grid_bot
+        );
+    }
+
+    // Footer note
+    let footer_y = table_top + table_h + 18.0;
+    let _ = writeln!(
+        s,
+        "<text x=\"20\" y=\"{}\" class=\"subtitle\">\
+         Source: criterion (cargo bench --features _bench -- comparison). \
+         CI = 95% confidence interval on mean.</text>",
+        footer_y
+    );
+
+    s.push_str("</svg>\n");
+
+    let path = "docs/flamecharts/comparison_table.svg";
+    std::fs::write(path, &s).expect("write comparison_table.svg");
+    eprintln!("  Written: {} ({} bytes)", path, s.len());
 }
 
 // ── Flamechart generation ──────────────────────────────────────────────
@@ -371,14 +506,9 @@ fn generate_all() {
 
     let variants: &[(&str, &str, &str)] = &[
         (
-            "--before",
-            "flamechart_before.svg",
-            "ro11y Counter::add (3 attrs) \u{2014} Before Optimization",
-        ),
-        (
             "--after",
             "flamechart_after.svg",
-            "ro11y Counter::add (3 attrs) \u{2014} After Optimization",
+            "ro11y Counter::add (3 attrs) \u{2014} Optimized",
         ),
         (
             "--otel",
@@ -386,9 +516,6 @@ fn generate_all() {
             "OpenTelemetry SDK 0.31 Counter::add (3 attrs)",
         ),
     ];
-
-    // Collect cleaned collapsed stacks for differential flamegraph
-    let mut collapsed_by_tag: Vec<(String, String)> = Vec::new();
 
     for (arg, filename, title) in variants {
         let svg_path = format!("docs/flamecharts/{}", filename);
@@ -440,7 +567,6 @@ fn generate_all() {
         // 6. Clean up frame names for readability
         let collapsed = String::from_utf8(collapsed_bytes).expect("utf8");
         let cleaned = clean_frames(&collapsed);
-        collapsed_by_tag.push((tag.to_string(), cleaned.clone()));
 
         // 7. Render flamegraph SVG
         let mut opts = flamegraph::Options::default();
@@ -463,51 +589,32 @@ fn generate_all() {
         verify_svg(&svg_str, &svg_path);
     }
 
-    // ── Differential flamegraph: before → after ────────────────────────
-    let before_stacks = collapsed_by_tag
-        .iter()
-        .find(|(t, _)| t == "before")
-        .map(|(_, s)| s.as_str())
-        .unwrap_or("");
-    let after_stacks = collapsed_by_tag
-        .iter()
-        .find(|(t, _)| t == "after")
-        .map(|(_, s)| s.as_str())
-        .unwrap_or("");
+    // ── Read criterion results and generate comparison outputs ──────
+    eprintln!("\n=== Criterion benchmark results ===");
+    let groups = read_criterion_results();
 
-    if !before_stacks.is_empty() && !after_stacks.is_empty() {
-        eprintln!("\n=== Differential flamegraph: before \u{2192} after ===");
+    if groups.is_empty() {
+        eprintln!("  No criterion results found. Skipping TOML + SVG generation.");
+        eprintln!("  Run `cargo bench --features _bench -- comparison` first.");
+    } else {
+        for g in &groups {
+            let pretty = pretty_group_name(&g.name);
+            if let (Some(ref r), Some(ref o)) = (&g.ro11y, &g.otel) {
+                let speedup = o.mean_ns / r.mean_ns;
+                let r_ci = (r.ci_upper - r.ci_lower) / 2.0;
+                let o_ci = (o.ci_upper - o.ci_lower) / 2.0;
+                eprintln!(
+                    "  {:<30} ro11y: {:.1} \u{00b1} {:.1} ns  OTel: {:.1} \u{00b1} {:.1} ns  ({:.1}x)",
+                    pretty, r.mean_ns, r_ci, o.mean_ns, o_ci, speedup
+                );
+            } else {
+                eprintln!("  {:<30} (incomplete data)", pretty);
+            }
+        }
 
-        let mut diff_output = Vec::new();
-        inferno::differential::from_readers(
-            inferno::differential::Options::default(),
-            BufReader::new(Cursor::new(before_stacks.as_bytes())),
-            BufReader::new(Cursor::new(after_stacks.as_bytes())),
-            &mut diff_output,
-        )
-        .expect("compute differential");
-
-        let mut opts = flamegraph::Options::default();
-        opts.title = "Differential: before \u{2192} after (red=growth, blue=shrink)".into();
-        opts.count_name = "samples".into();
-        opts.min_width = 0.1;
-
-        let mut svg = Vec::new();
-        flamegraph::from_reader(
-            &mut opts,
-            BufReader::new(Cursor::new(&diff_output)),
-            &mut svg,
-        )
-        .expect("render diff flamegraph");
-
-        let diff_path = "docs/flamecharts/flamechart_diff.svg";
-        std::fs::write(diff_path, &svg).expect("write diff svg");
-        let svg_str = String::from_utf8_lossy(&svg);
-        verify_svg(&svg_str, diff_path);
+        write_criterion_toml(&groups);
+        render_comparison_table_svg(&groups);
     }
-
-    // ── Allocation + latency measurement ───────────────────────────────
-    measure_all();
 
     eprintln!("\nDone. Flamecharts in docs/flamecharts/");
 }

@@ -418,7 +418,11 @@ impl Counter {
     /// Add a value to the counter for the given attribute set.
     pub fn add(&self, value: u64, attrs: &[(&str, &str)]) {
         let exemplar = capture_exemplar(ExemplarValue::Int(value as i64));
-        let key = if attrs.is_empty() { 0 } else { attrs_hash_unordered(attrs) };
+        let key = if attrs.is_empty() {
+            0
+        } else {
+            attrs_hash_unordered(attrs)
+        };
         let mut data = self.inner.data.lock().unwrap();
         if !data.contains_key(&key) && data.len() >= self.inner.max_cardinality {
             if !self
@@ -464,7 +468,11 @@ impl Gauge {
     /// Set the gauge to a value for the given attribute set.
     pub fn set(&self, value: f64, attrs: &[(&str, &str)]) {
         let exemplar = capture_exemplar(ExemplarValue::Double(value));
-        let key = if attrs.is_empty() { 0 } else { attrs_hash_unordered(attrs) };
+        let key = if attrs.is_empty() {
+            0
+        } else {
+            attrs_hash_unordered(attrs)
+        };
         let mut data = self.inner.data.lock().unwrap();
         if !data.contains_key(&key) && data.len() >= self.inner.max_cardinality {
             if !self
@@ -522,7 +530,11 @@ impl Histogram {
     pub fn observe(&self, value: f64, attrs: &[(&str, &str)]) {
         let exemplar = capture_exemplar(ExemplarValue::Double(value));
         let bucket_idx = self.inner.boundaries.partition_point(|&b| b <= value);
-        let key = if attrs.is_empty() { 0 } else { attrs_hash_unordered(attrs) };
+        let key = if attrs.is_empty() {
+            0
+        } else {
+            attrs_hash_unordered(attrs)
+        };
         let mut data = self.inner.data.lock().unwrap();
         if !data.contains_key(&key) && data.len() >= self.inner.max_cardinality {
             if !self

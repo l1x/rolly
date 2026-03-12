@@ -20,7 +20,7 @@ fn ro11y_registry() -> MetricsRegistry {
 // OpenTelemetry SDK setup
 // ---------------------------------------------------------------------------
 use opentelemetry::metrics::MeterProvider as _;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::{metrics::Meter, KeyValue};
 use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
 
 fn otel_provider() -> SdkMeterProvider {
@@ -44,13 +44,24 @@ fn bench_counter_3_attrs(c: &mut Criterion) {
     let r_reg = ro11y_registry();
     let r_ctr = r_reg.counter("requests", "total requests");
     // warm up the attribute set
-    r_ctr.add(1, &[("method", "GET"), ("status", "200"), ("region", "us-east-1")]);
+    r_ctr.add(
+        1,
+        &[
+            ("method", "GET"),
+            ("status", "200"),
+            ("region", "us-east-1"),
+        ],
+    );
 
     group.bench_function("ro11y", |b| {
         b.iter(|| {
             r_ctr.add(
                 black_box(1),
-                black_box(&[("method", "GET"), ("status", "200"), ("region", "us-east-1")]),
+                black_box(&[
+                    ("method", "GET"),
+                    ("status", "200"),
+                    ("region", "us-east-1"),
+                ]),
             );
         });
     });
@@ -60,11 +71,14 @@ fn bench_counter_3_attrs(c: &mut Criterion) {
     let o_meter = otel_meter(&o_provider);
     let o_ctr = o_meter.u64_counter("requests").build();
     // warm up
-    o_ctr.add(1, &[
-        KeyValue::new("method", "GET"),
-        KeyValue::new("status", "200"),
-        KeyValue::new("region", "us-east-1"),
-    ]);
+    o_ctr.add(
+        1,
+        &[
+            KeyValue::new("method", "GET"),
+            KeyValue::new("status", "200"),
+            KeyValue::new("region", "us-east-1"),
+        ],
+    );
 
     group.bench_function("otel_sdk", |b| {
         b.iter(|| {
@@ -226,6 +240,178 @@ fn bench_histogram_5_attrs(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
+// Cold-path benchmarks (first insert — owned_attrs allocation)
+// ---------------------------------------------------------------------------
+
+fn bench_counter_3_attrs_cold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("comparison_counter_3_attrs_cold");
+
+    let attrs_otel = [
+        KeyValue::new("method", "GET"),
+        KeyValue::new("status", "200"),
+        KeyValue::new("region", "us-east-1"),
+    ];
+
+    // ro11y — no warmup, each iteration uses a fresh registry
+    group.bench_function("ro11y", |b| {
+        b.iter(|| {
+            let reg = ro11y_registry();
+            let ctr = reg.counter("requests", "total requests");
+            ctr.add(
+                black_box(1),
+                black_box(&[
+                    ("method", "GET"),
+                    ("status", "200"),
+                    ("region", "us-east-1"),
+                ]),
+            );
+        });
+    });
+
+    // OTel SDK — no warmup, each iteration uses a fresh provider
+    group.bench_function("otel_sdk", |b| {
+        b.iter(|| {
+            let provider = otel_provider();
+            let meter = otel_meter(&provider);
+            let ctr = meter.u64_counter("requests").build();
+            ctr.add(black_box(1), black_box(&attrs_otel));
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_counter_5_attrs_cold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("comparison_counter_5_attrs_cold");
+
+    let attrs_otel = [
+        KeyValue::new("method", "GET"),
+        KeyValue::new("status", "200"),
+        KeyValue::new("region", "us-east-1"),
+        KeyValue::new("host", "api.example.com"),
+        KeyValue::new("path", "/api/v1/users"),
+    ];
+
+    group.bench_function("ro11y", |b| {
+        b.iter(|| {
+            let reg = ro11y_registry();
+            let ctr = reg.counter("requests", "total requests");
+            ctr.add(
+                black_box(1),
+                black_box(&[
+                    ("method", "GET"),
+                    ("status", "200"),
+                    ("region", "us-east-1"),
+                    ("host", "api.example.com"),
+                    ("path", "/api/v1/users"),
+                ]),
+            );
+        });
+    });
+
+    group.bench_function("otel_sdk", |b| {
+        b.iter(|| {
+            let provider = otel_provider();
+            let meter = otel_meter(&provider);
+            let ctr = meter.u64_counter("requests").build();
+            ctr.add(black_box(1), black_box(&attrs_otel));
+        });
+    });
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// Gauge benchmarks
+// ---------------------------------------------------------------------------
+
+fn bench_gauge_3_attrs(c: &mut Criterion) {
+    let mut group = c.benchmark_group("comparison_gauge_3_attrs");
+
+    let attrs_ro11y: &[(&str, &str)] = &[
+        ("method", "GET"),
+        ("status", "200"),
+        ("region", "us-east-1"),
+    ];
+
+    let attrs_otel = [
+        KeyValue::new("method", "GET"),
+        KeyValue::new("status", "200"),
+        KeyValue::new("region", "us-east-1"),
+    ];
+
+    // ro11y
+    let r_reg = ro11y_registry();
+    let r_gauge = r_reg.gauge("connections", "active connections");
+    r_gauge.set(1.0, attrs_ro11y);
+
+    group.bench_function("ro11y", |b| {
+        b.iter(|| {
+            r_gauge.set(black_box(42.0), black_box(attrs_ro11y));
+        });
+    });
+
+    // OTel SDK
+    let o_provider = otel_provider();
+    let o_meter = otel_meter(&o_provider);
+    let o_gauge = o_meter.f64_gauge("connections").build();
+    o_gauge.record(1.0, &attrs_otel);
+
+    group.bench_function("otel_sdk", |b| {
+        b.iter(|| {
+            o_gauge.record(black_box(42.0), black_box(&attrs_otel));
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_gauge_5_attrs(c: &mut Criterion) {
+    let mut group = c.benchmark_group("comparison_gauge_5_attrs");
+
+    let attrs_ro11y: &[(&str, &str)] = &[
+        ("method", "GET"),
+        ("status", "200"),
+        ("region", "us-east-1"),
+        ("host", "api.example.com"),
+        ("path", "/api/v1/users"),
+    ];
+
+    let attrs_otel = [
+        KeyValue::new("method", "GET"),
+        KeyValue::new("status", "200"),
+        KeyValue::new("region", "us-east-1"),
+        KeyValue::new("host", "api.example.com"),
+        KeyValue::new("path", "/api/v1/users"),
+    ];
+
+    // ro11y
+    let r_reg = ro11y_registry();
+    let r_gauge = r_reg.gauge("connections", "active connections");
+    r_gauge.set(1.0, attrs_ro11y);
+
+    group.bench_function("ro11y", |b| {
+        b.iter(|| {
+            r_gauge.set(black_box(42.0), black_box(attrs_ro11y));
+        });
+    });
+
+    // OTel SDK
+    let o_provider = otel_provider();
+    let o_meter = otel_meter(&o_provider);
+    let o_gauge = o_meter.f64_gauge("connections").build();
+    o_gauge.record(1.0, &attrs_otel);
+
+    group.bench_function("otel_sdk", |b| {
+        b.iter(|| {
+            o_gauge.record(black_box(42.0), black_box(&attrs_otel));
+        });
+    });
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 // No-attrs baseline (cheapest possible call)
 // ---------------------------------------------------------------------------
 
@@ -263,6 +449,10 @@ criterion_group!(
     bench_counter_no_attrs,
     bench_counter_3_attrs,
     bench_counter_5_attrs,
+    bench_counter_3_attrs_cold,
+    bench_counter_5_attrs_cold,
+    bench_gauge_3_attrs,
+    bench_gauge_5_attrs,
     bench_histogram_3_attrs,
     bench_histogram_5_attrs,
 );

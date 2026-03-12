@@ -30,17 +30,28 @@ struct EcommerceMetrics {
 impl EcommerceMetrics {
     fn new() -> Self {
         let registry = MetricsRegistry::new();
-        let latency_buckets = &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0];
+        let latency_buckets = &[
+            0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+        ];
         Self {
             req_count: registry.counter("http.server.requests", "Total HTTP requests"),
             req_errors: registry.counter("http.server.errors", "Total HTTP errors"),
             active_requests: registry.gauge("http.server.active_requests", "In-flight requests"),
-            req_duration: registry.histogram("http.server.duration", "Request latency in seconds", latency_buckets),
-            req_body_size: registry.histogram("http.server.request.body.size", "Request body bytes", &[64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0]),
+            req_duration: registry.histogram(
+                "http.server.duration",
+                "Request latency in seconds",
+                latency_buckets,
+            ),
+            req_body_size: registry.histogram(
+                "http.server.request.body.size",
+                "Request body bytes",
+                &[64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0],
+            ),
             items_viewed: registry.counter("ecommerce.items.viewed", "Items viewed"),
             search_queries: registry.counter("ecommerce.search.queries", "Search queries"),
             cart_items_added: registry.counter("ecommerce.cart.items_added", "Items added to cart"),
-            cart_items_removed: registry.counter("ecommerce.cart.items_removed", "Items removed from cart"),
+            cart_items_removed: registry
+                .counter("ecommerce.cart.items_removed", "Items removed from cart"),
             cart_abandonment: registry.counter("ecommerce.cart.abandonments", "Cart abandonments"),
             revenue: registry.counter("ecommerce.revenue.cents", "Revenue in cents"),
             payment_attempts: registry.counter("ecommerce.payment.attempts", "Payment attempts"),
@@ -51,9 +62,20 @@ impl EcommerceMetrics {
 }
 
 /// Create an OtlpLayer + Exporter with large capacity for benchmarks.
-fn bench_subscriber() -> (impl tracing::Subscriber, tokio::sync::mpsc::Receiver<ExportMessage>) {
+fn bench_subscriber() -> (
+    impl tracing::Subscriber,
+    tokio::sync::mpsc::Receiver<ExportMessage>,
+) {
     let (exporter, rx) = Exporter::start_test_with_capacity(1_000_000);
-    let layer = OtlpLayer::new(exporter, "bench-ecommerce", "0.5.1", "bench", true, true, 1.0);
+    let layer = OtlpLayer::new(
+        exporter,
+        "bench-ecommerce",
+        "0.5.1",
+        "bench",
+        true,
+        true,
+        1.0,
+    );
     let subscriber = tracing_subscriber::registry().with(layer);
     (subscriber, rx)
 }
@@ -99,13 +121,49 @@ fn simulate_catalog_browse(metrics: &EcommerceMetrics, trace_id: &str) {
         "catalog browse"
     );
 
-    metrics.active_requests.set(42.0, &[("region", "eu-west-1")]);
-    metrics.req_count.add(1, &[("method", "GET"), ("route", "/products"), ("status", "200"), ("region", "eu-west-1"), ("customer_tier", "premium")]);
-    metrics.items_viewed.add(20, &[("page", "catalog"), ("category", "electronics"), ("region", "eu-west-1")]);
-    metrics.req_duration.observe(0.012, &[("method", "GET"), ("route", "/products"), ("region", "eu-west-1"), ("customer_tier", "premium")]);
-    metrics.req_body_size.observe(0.0, &[("method", "GET"), ("route", "/products")]);
+    metrics
+        .active_requests
+        .set(42.0, &[("region", "eu-west-1")]);
+    metrics.req_count.add(
+        1,
+        &[
+            ("method", "GET"),
+            ("route", "/products"),
+            ("status", "200"),
+            ("region", "eu-west-1"),
+            ("customer_tier", "premium"),
+        ],
+    );
+    metrics.items_viewed.add(
+        20,
+        &[
+            ("page", "catalog"),
+            ("category", "electronics"),
+            ("region", "eu-west-1"),
+        ],
+    );
+    metrics.req_duration.observe(
+        0.012,
+        &[
+            ("method", "GET"),
+            ("route", "/products"),
+            ("region", "eu-west-1"),
+            ("customer_tier", "premium"),
+        ],
+    );
+    metrics
+        .req_body_size
+        .observe(0.0, &[("method", "GET"), ("route", "/products")]);
     // ~2% of browse requests fail (upstream timeout)
-    metrics.req_errors.add(0, &[("method", "GET"), ("route", "/products"), ("error_type", "none"), ("region", "eu-west-1")]);
+    metrics.req_errors.add(
+        0,
+        &[
+            ("method", "GET"),
+            ("route", "/products"),
+            ("error_type", "none"),
+            ("region", "eu-west-1"),
+        ],
+    );
 }
 
 #[inline(never)]
@@ -133,9 +191,33 @@ fn simulate_product_detail(metrics: &EcommerceMetrics, trace_id: &str) {
         "product detail view"
     );
 
-    metrics.req_count.add(1, &[("method", "GET"), ("route", "/products/:id"), ("status", "200"), ("region", "us-east-1"), ("customer_tier", "member")]);
-    metrics.items_viewed.add(1, &[("page", "detail"), ("category", "electronics"), ("region", "us-east-1")]);
-    metrics.req_duration.observe(0.008, &[("method", "GET"), ("route", "/products/:id"), ("region", "us-east-1"), ("customer_tier", "member")]);
+    metrics.req_count.add(
+        1,
+        &[
+            ("method", "GET"),
+            ("route", "/products/:id"),
+            ("status", "200"),
+            ("region", "us-east-1"),
+            ("customer_tier", "member"),
+        ],
+    );
+    metrics.items_viewed.add(
+        1,
+        &[
+            ("page", "detail"),
+            ("category", "electronics"),
+            ("region", "us-east-1"),
+        ],
+    );
+    metrics.req_duration.observe(
+        0.008,
+        &[
+            ("method", "GET"),
+            ("route", "/products/:id"),
+            ("region", "us-east-1"),
+            ("customer_tier", "member"),
+        ],
+    );
 }
 
 #[inline(never)]
@@ -164,10 +246,42 @@ fn simulate_search(metrics: &EcommerceMetrics, trace_id: &str) {
         "search executed"
     );
 
-    metrics.search_queries.add(1, &[("region", "eu-west-1"), ("customer_tier", "guest"), ("cache_hit", "false"), ("has_filters", "true")]);
-    metrics.req_count.add(1, &[("method", "GET"), ("route", "/search"), ("status", "200"), ("region", "eu-west-1"), ("customer_tier", "guest")]);
-    metrics.items_viewed.add(47, &[("page", "search"), ("category", "mixed"), ("region", "eu-west-1")]);
-    metrics.req_duration.observe(0.045, &[("method", "GET"), ("route", "/search"), ("region", "eu-west-1"), ("customer_tier", "guest")]);
+    metrics.search_queries.add(
+        1,
+        &[
+            ("region", "eu-west-1"),
+            ("customer_tier", "guest"),
+            ("cache_hit", "false"),
+            ("has_filters", "true"),
+        ],
+    );
+    metrics.req_count.add(
+        1,
+        &[
+            ("method", "GET"),
+            ("route", "/search"),
+            ("status", "200"),
+            ("region", "eu-west-1"),
+            ("customer_tier", "guest"),
+        ],
+    );
+    metrics.items_viewed.add(
+        47,
+        &[
+            ("page", "search"),
+            ("category", "mixed"),
+            ("region", "eu-west-1"),
+        ],
+    );
+    metrics.req_duration.observe(
+        0.045,
+        &[
+            ("method", "GET"),
+            ("route", "/search"),
+            ("region", "eu-west-1"),
+            ("customer_tier", "guest"),
+        ],
+    );
 }
 
 #[inline(never)]
@@ -203,11 +317,39 @@ fn simulate_cart_add(metrics: &EcommerceMetrics, trace_id: &str) {
         "cart updated"
     );
 
-    metrics.req_count.add(1, &[("method", "POST"), ("route", "/cart/add"), ("status", "200"), ("region", "us-east-1"), ("customer_tier", "premium")]);
-    metrics.cart_items_added.add(1, &[("product_category", "electronics"), ("region", "us-east-1"), ("currency", "USD")]);
-    metrics.cart_abandonment.add(0, &[("region", "us-east-1"), ("customer_tier", "premium")]);
-    metrics.req_duration.observe(0.015, &[("method", "POST"), ("route", "/cart/add"), ("region", "us-east-1"), ("customer_tier", "premium")]);
-    metrics.req_body_size.observe(128.0, &[("method", "POST"), ("route", "/cart/add")]);
+    metrics.req_count.add(
+        1,
+        &[
+            ("method", "POST"),
+            ("route", "/cart/add"),
+            ("status", "200"),
+            ("region", "us-east-1"),
+            ("customer_tier", "premium"),
+        ],
+    );
+    metrics.cart_items_added.add(
+        1,
+        &[
+            ("product_category", "electronics"),
+            ("region", "us-east-1"),
+            ("currency", "USD"),
+        ],
+    );
+    metrics
+        .cart_abandonment
+        .add(0, &[("region", "us-east-1"), ("customer_tier", "premium")]);
+    metrics.req_duration.observe(
+        0.015,
+        &[
+            ("method", "POST"),
+            ("route", "/cart/add"),
+            ("region", "us-east-1"),
+            ("customer_tier", "premium"),
+        ],
+    );
+    metrics
+        .req_body_size
+        .observe(128.0, &[("method", "POST"), ("route", "/cart/add")]);
 }
 
 #[inline(never)]
@@ -256,8 +398,23 @@ fn simulate_checkout(metrics: &EcommerceMetrics, trace_id: &str) {
             risk_score = 12i64,
             "payment processed"
         );
-        metrics.payment_attempts.add(1, &[("provider", "stripe"), ("status", "success"), ("currency", "EUR"), ("region", "eu-west-1")]);
-        metrics.revenue.add(16197, &[("currency", "EUR"), ("region", "eu-west-1"), ("payment_provider", "stripe")]);
+        metrics.payment_attempts.add(
+            1,
+            &[
+                ("provider", "stripe"),
+                ("status", "success"),
+                ("currency", "EUR"),
+                ("region", "eu-west-1"),
+            ],
+        );
+        metrics.revenue.add(
+            16197,
+            &[
+                ("currency", "EUR"),
+                ("region", "eu-west-1"),
+                ("payment_provider", "stripe"),
+            ],
+        );
     }
 
     // Child span: inventory reservation
@@ -274,7 +431,14 @@ fn simulate_checkout(metrics: &EcommerceMetrics, trace_id: &str) {
             warehouse = "wh-eu-01",
             "inventory verified and reserved"
         );
-        metrics.inventory_checks.add(3, &[("result", "in_stock"), ("warehouse", "wh-eu-01"), ("region", "eu-west-1")]);
+        metrics.inventory_checks.add(
+            3,
+            &[
+                ("result", "in_stock"),
+                ("warehouse", "wh-eu-01"),
+                ("region", "eu-west-1"),
+            ],
+        );
     }
 
     // Child span: shipping label
@@ -293,9 +457,28 @@ fn simulate_checkout(metrics: &EcommerceMetrics, trace_id: &str) {
         );
     }
 
-    metrics.req_count.add(1, &[("method", "POST"), ("route", "/checkout"), ("status", "200"), ("region", "eu-west-1"), ("customer_tier", "premium")]);
-    metrics.req_duration.observe(0.085, &[("method", "POST"), ("route", "/checkout"), ("region", "eu-west-1"), ("customer_tier", "premium")]);
-    metrics.req_body_size.observe(2048.0, &[("method", "POST"), ("route", "/checkout")]);
+    metrics.req_count.add(
+        1,
+        &[
+            ("method", "POST"),
+            ("route", "/checkout"),
+            ("status", "200"),
+            ("region", "eu-west-1"),
+            ("customer_tier", "premium"),
+        ],
+    );
+    metrics.req_duration.observe(
+        0.085,
+        &[
+            ("method", "POST"),
+            ("route", "/checkout"),
+            ("region", "eu-west-1"),
+            ("customer_tier", "premium"),
+        ],
+    );
+    metrics
+        .req_body_size
+        .observe(2048.0, &[("method", "POST"), ("route", "/checkout")]);
 }
 
 #[inline(never)]
@@ -328,7 +511,14 @@ fn simulate_mixed_batch(metrics: &EcommerceMetrics, trace_id: &str, n: usize) {
             93..96 => {
                 // cart remove — similar cost to cart_add
                 simulate_cart_add(metrics, trace_id);
-                metrics.cart_items_removed.add(1, &[("product_category", "electronics"), ("region", "us-east-1"), ("currency", "USD")]);
+                metrics.cart_items_removed.add(
+                    1,
+                    &[
+                        ("product_category", "electronics"),
+                        ("region", "us-east-1"),
+                        ("currency", "USD"),
+                    ],
+                );
             }
             _ => simulate_health(trace_id),
         }
@@ -455,14 +645,29 @@ fn metric_recording_under_load(c: &mut Criterion) {
     // Pre-warm: create 100 distinct attribute series
     for i in 0..100 {
         let route = format!("/api/v{}", i);
-        metrics.req_count.add(1, &[("method", "GET"), ("route", &route), ("status", "200"), ("region", "eu-west-1"), ("customer_tier", "member")]);
+        metrics.req_count.add(
+            1,
+            &[
+                ("method", "GET"),
+                ("route", &route),
+                ("status", "200"),
+                ("region", "eu-west-1"),
+                ("customer_tier", "member"),
+            ],
+        );
     }
 
     group.bench_function("counter_add_5dims", |b| {
         b.iter(|| {
             metrics.req_count.add(
                 black_box(1),
-                black_box(&[("method", "GET"), ("route", "/products"), ("status", "200"), ("region", "eu-west-1"), ("customer_tier", "premium")]),
+                black_box(&[
+                    ("method", "GET"),
+                    ("route", "/products"),
+                    ("status", "200"),
+                    ("region", "eu-west-1"),
+                    ("customer_tier", "premium"),
+                ]),
             );
         });
     });
@@ -471,7 +676,12 @@ fn metric_recording_under_load(c: &mut Criterion) {
         b.iter(|| {
             metrics.req_duration.observe(
                 black_box(0.042),
-                black_box(&[("method", "GET"), ("route", "/products"), ("region", "eu-west-1"), ("customer_tier", "premium")]),
+                black_box(&[
+                    ("method", "GET"),
+                    ("route", "/products"),
+                    ("region", "eu-west-1"),
+                    ("customer_tier", "premium"),
+                ]),
             );
         });
     });

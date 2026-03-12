@@ -284,13 +284,13 @@ pub mod bench {
     pub fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
         crate::otlp_layer::should_sample(trace_id, sampling_rate)
     }
+    pub use crate::otlp_layer::OtlpLayer;
     pub use crate::otlp_log::{encode_export_logs_request, LogData, SeverityNumber};
     pub use crate::otlp_metrics::encode_export_metrics_request;
     pub use crate::otlp_trace::{
         encode_export_trace_request, encode_key_value, encode_resource, AnyValue, KeyValue,
         SpanData, SpanKind, SpanStatus, StatusCode,
     };
-    pub use crate::otlp_layer::OtlpLayer;
     pub use crate::proto::{encode_message_field, encode_message_field_in_place};
     pub use crate::trace_id::{generate_span_id, generate_trace_id, hex_encode};
 
