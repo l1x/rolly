@@ -282,7 +282,7 @@ mod tests {
                 key: "service.name".to_string(),
                 value: crate::otlp_trace::AnyValue::String("test-svc".to_string()),
             }],
-            "ro11y",
+            "rolly",
             "0.3.0",
             &snapshots,
             1_000_000_000,
@@ -317,7 +317,7 @@ mod tests {
                 key: "service.name".to_string(),
                 value: crate::otlp_trace::AnyValue::String("test-svc".to_string()),
             }],
-            "ro11y",
+            "rolly",
             "0.3.0",
             &snapshots,
             1_000_000_000,
@@ -341,7 +341,7 @@ mod tests {
             data_points: vec![(Arc::new(vec![]), 99, None)],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // as_int value 99 encoded as fixed64 LE
         let val_bytes = (99_i64 as u64).to_le_bytes();
@@ -362,7 +362,7 @@ mod tests {
             ],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // Both values should be present
         let val10 = (10_i64 as u64).to_le_bytes();
@@ -379,7 +379,7 @@ mod tests {
             data_points: vec![(Arc::new(vec![]), 1, None)],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // aggregation_temporality = 2 (CUMULATIVE): varint field 2, value 2
         // tag = (2<<3)|0 = 0x10, value = 0x02
@@ -397,7 +397,7 @@ mod tests {
             data_points: vec![(Arc::new(vec![]), 1, None)],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // is_monotonic = true: varint field 3, value 1
         // tag = (3<<3)|0 = 0x18, value = 0x01
@@ -422,7 +422,7 @@ mod tests {
             },
         ];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         assert!(bytes.windows(8).any(|w| w == b"requests"));
         assert!(bytes.windows(11).any(|w| w == b"temperature"));
@@ -450,7 +450,7 @@ mod tests {
                 key: "service.name".to_string(),
                 value: crate::otlp_trace::AnyValue::String("test-svc".to_string()),
             }],
-            "ro11y",
+            "rolly",
             "0.3.0",
             &snapshots,
             1_000_000_000,
@@ -482,7 +482,7 @@ mod tests {
             }],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // aggregation_temporality = 2 (CUMULATIVE): tag = 0x10, value = 0x02
         assert!(
@@ -508,7 +508,7 @@ mod tests {
             }],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // bucket_counts contains 3 and 7 as fixed64 LE
         let val3 = 3u64.to_le_bytes();
@@ -534,7 +534,7 @@ mod tests {
             }],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         assert!(bytes.windows(6).any(|w| w == b"method"));
         assert!(bytes.windows(3).any(|w| w == b"GET"));
@@ -569,7 +569,7 @@ mod tests {
             },
         ];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         assert!(bytes.windows(8).any(|w| w == b"requests"));
         assert!(bytes.windows(11).any(|w| w == b"temperature"));
@@ -588,7 +588,7 @@ mod tests {
             )],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         assert!(bytes.windows(6).any(|w| w == b"method"));
         assert!(bytes.windows(3).any(|w| w == b"GET"));
@@ -608,7 +608,7 @@ mod tests {
             data_points: vec![(Arc::new(vec![]), 42, exemplar)],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // trace_id bytes should be present
         assert!(bytes.windows(16).any(|w| w == [0x01; 16]));
@@ -639,7 +639,7 @@ mod tests {
             }],
         }];
 
-        let bytes = encode_export_metrics_request(&[], "ro11y", "0.3.0", &snapshots, 0, 0);
+        let bytes = encode_export_metrics_request(&[], "rolly", "0.3.0", &snapshots, 0, 0);
 
         // trace_id and span_id bytes should be present
         assert!(bytes.windows(16).any(|w| w == [0xAA; 16]));

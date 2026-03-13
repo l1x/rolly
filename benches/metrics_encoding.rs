@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ro11y::bench::*;
+use rolly::bench::*;
 
 fn resource_attrs() -> Vec<KeyValue> {
     vec![
@@ -96,7 +96,7 @@ fn bench_encode_metrics_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_1c_1dp),
                 1_700_000_000_000_000_000,
@@ -109,7 +109,7 @@ fn bench_encode_metrics_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_1c_10dp),
                 1_700_000_000_000_000_000,
@@ -122,7 +122,7 @@ fn bench_encode_metrics_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_10c_10dp),
                 1_700_000_000_000_000_000,
@@ -145,7 +145,7 @@ fn bench_encode_gauge_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_1g_4dp),
                 1_700_000_000_000_000_000,
@@ -158,7 +158,7 @@ fn bench_encode_gauge_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_10g_4dp),
                 1_700_000_000_000_000_000,
@@ -182,7 +182,7 @@ fn bench_encode_histogram_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_1h_1dp),
                 1_700_000_000_000_000_000,
@@ -195,7 +195,7 @@ fn bench_encode_histogram_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_1h_10dp),
                 1_700_000_000_000_000_000,
@@ -208,7 +208,7 @@ fn bench_encode_histogram_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_metrics_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.3.0",
                 black_box(&snap_10h_10dp),
                 1_700_000_000_000_000_000,

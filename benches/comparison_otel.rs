@@ -1,4 +1,4 @@
-//! Head-to-head benchmark: ro11y vs opentelemetry_sdk 0.31
+//! Head-to-head benchmark: rolly vs opentelemetry_sdk 0.31
 //!
 //! Compares identical metric operations on the same hardware to produce
 //! an apples-to-apples comparison.
@@ -8,11 +8,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 // ---------------------------------------------------------------------------
-// ro11y setup
+// rolly setup
 // ---------------------------------------------------------------------------
-use ro11y::bench::*;
+use rolly::bench::*;
 
-fn ro11y_registry() -> MetricsRegistry {
+fn rolly_registry() -> MetricsRegistry {
     MetricsRegistry::new()
 }
 
@@ -40,8 +40,8 @@ fn otel_meter(provider: &SdkMeterProvider) -> Meter {
 fn bench_counter_3_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_counter_3_attrs");
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_ctr = r_reg.counter("requests", "total requests");
     // warm up the attribute set
     r_ctr.add(
@@ -53,7 +53,7 @@ fn bench_counter_3_attrs(c: &mut Criterion) {
         ],
     );
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
             r_ctr.add(
                 black_box(1),
@@ -99,7 +99,7 @@ fn bench_counter_3_attrs(c: &mut Criterion) {
 fn bench_counter_5_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_counter_5_attrs");
 
-    let attrs_ro11y: &[(&str, &str)] = &[
+    let attrs_rolly: &[(&str, &str)] = &[
         ("method", "GET"),
         ("status", "200"),
         ("region", "us-east-1"),
@@ -115,14 +115,14 @@ fn bench_counter_5_attrs(c: &mut Criterion) {
         KeyValue::new("path", "/api/v1/users"),
     ];
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_ctr = r_reg.counter("requests", "total requests");
-    r_ctr.add(1, attrs_ro11y);
+    r_ctr.add(1, attrs_rolly);
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            r_ctr.add(black_box(1), black_box(attrs_ro11y));
+            r_ctr.add(black_box(1), black_box(attrs_rolly));
         });
     });
 
@@ -148,7 +148,7 @@ fn bench_counter_5_attrs(c: &mut Criterion) {
 fn bench_histogram_3_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_histogram_3_attrs");
 
-    let attrs_ro11y: &[(&str, &str)] = &[
+    let attrs_rolly: &[(&str, &str)] = &[
         ("method", "GET"),
         ("status", "200"),
         ("region", "us-east-1"),
@@ -160,18 +160,18 @@ fn bench_histogram_3_attrs(c: &mut Criterion) {
         KeyValue::new("region", "us-east-1"),
     ];
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_hist = r_reg.histogram(
         "request_duration",
         "HTTP request duration",
         &[5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0],
     );
-    r_hist.observe(42.5, attrs_ro11y);
+    r_hist.observe(42.5, attrs_rolly);
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            r_hist.observe(black_box(42.5), black_box(attrs_ro11y));
+            r_hist.observe(black_box(42.5), black_box(attrs_rolly));
         });
     });
 
@@ -193,7 +193,7 @@ fn bench_histogram_3_attrs(c: &mut Criterion) {
 fn bench_histogram_5_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_histogram_5_attrs");
 
-    let attrs_ro11y: &[(&str, &str)] = &[
+    let attrs_rolly: &[(&str, &str)] = &[
         ("method", "GET"),
         ("status", "200"),
         ("region", "us-east-1"),
@@ -209,18 +209,18 @@ fn bench_histogram_5_attrs(c: &mut Criterion) {
         KeyValue::new("path", "/api/v1/users"),
     ];
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_hist = r_reg.histogram(
         "request_duration",
         "HTTP request duration",
         &[5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0],
     );
-    r_hist.observe(42.5, attrs_ro11y);
+    r_hist.observe(42.5, attrs_rolly);
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            r_hist.observe(black_box(42.5), black_box(attrs_ro11y));
+            r_hist.observe(black_box(42.5), black_box(attrs_rolly));
         });
     });
 
@@ -252,10 +252,10 @@ fn bench_counter_3_attrs_cold(c: &mut Criterion) {
         KeyValue::new("region", "us-east-1"),
     ];
 
-    // ro11y — no warmup, each iteration uses a fresh registry
-    group.bench_function("ro11y", |b| {
+    // rolly — no warmup, each iteration uses a fresh registry
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            let reg = ro11y_registry();
+            let reg = rolly_registry();
             let ctr = reg.counter("requests", "total requests");
             ctr.add(
                 black_box(1),
@@ -292,9 +292,9 @@ fn bench_counter_5_attrs_cold(c: &mut Criterion) {
         KeyValue::new("path", "/api/v1/users"),
     ];
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            let reg = ro11y_registry();
+            let reg = rolly_registry();
             let ctr = reg.counter("requests", "total requests");
             ctr.add(
                 black_box(1),
@@ -328,7 +328,7 @@ fn bench_counter_5_attrs_cold(c: &mut Criterion) {
 fn bench_gauge_3_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_gauge_3_attrs");
 
-    let attrs_ro11y: &[(&str, &str)] = &[
+    let attrs_rolly: &[(&str, &str)] = &[
         ("method", "GET"),
         ("status", "200"),
         ("region", "us-east-1"),
@@ -340,14 +340,14 @@ fn bench_gauge_3_attrs(c: &mut Criterion) {
         KeyValue::new("region", "us-east-1"),
     ];
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_gauge = r_reg.gauge("connections", "active connections");
-    r_gauge.set(1.0, attrs_ro11y);
+    r_gauge.set(1.0, attrs_rolly);
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            r_gauge.set(black_box(42.0), black_box(attrs_ro11y));
+            r_gauge.set(black_box(42.0), black_box(attrs_rolly));
         });
     });
 
@@ -369,7 +369,7 @@ fn bench_gauge_3_attrs(c: &mut Criterion) {
 fn bench_gauge_5_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_gauge_5_attrs");
 
-    let attrs_ro11y: &[(&str, &str)] = &[
+    let attrs_rolly: &[(&str, &str)] = &[
         ("method", "GET"),
         ("status", "200"),
         ("region", "us-east-1"),
@@ -385,14 +385,14 @@ fn bench_gauge_5_attrs(c: &mut Criterion) {
         KeyValue::new("path", "/api/v1/users"),
     ];
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_gauge = r_reg.gauge("connections", "active connections");
-    r_gauge.set(1.0, attrs_ro11y);
+    r_gauge.set(1.0, attrs_rolly);
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
-            r_gauge.set(black_box(42.0), black_box(attrs_ro11y));
+            r_gauge.set(black_box(42.0), black_box(attrs_rolly));
         });
     });
 
@@ -418,12 +418,12 @@ fn bench_gauge_5_attrs(c: &mut Criterion) {
 fn bench_counter_no_attrs(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_counter_no_attrs");
 
-    // ro11y
-    let r_reg = ro11y_registry();
+    // rolly
+    let r_reg = rolly_registry();
     let r_ctr = r_reg.counter("simple", "simple counter");
     r_ctr.add(1, &[]);
 
-    group.bench_function("ro11y", |b| {
+    group.bench_function("rolly", |b| {
         b.iter(|| {
             r_ctr.add(black_box(1), black_box(&[]));
         });

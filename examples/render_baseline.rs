@@ -148,7 +148,7 @@ fn main() {
     root.fill(&WHITE).unwrap();
 
     let title = format!(
-        "ro11y v{} Performance Baseline — {} / {}",
+        "rolly v{} Performance Baseline — {} / {}",
         baseline.metadata.version, baseline.metadata.platform, baseline.metadata.cpu
     );
     root.draw(&Text::new(

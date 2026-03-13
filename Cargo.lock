@@ -1564,7 +1564,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ro11y"
+name = "rolly"
 version = "0.5.1"
 dependencies = [
  "blake3",

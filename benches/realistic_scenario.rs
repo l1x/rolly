@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use ro11y::bench::*;
+use rolly::bench::*;
 use tracing_subscriber::layer::SubscriberExt;
 
 // ---------------------------------------------------------------------------

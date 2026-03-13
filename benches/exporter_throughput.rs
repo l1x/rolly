@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ro11y::bench::*;
+use rolly::bench::*;
 
 fn make_payload(size: usize) -> Vec<u8> {
     let span = SpanData {
@@ -26,7 +26,7 @@ fn make_payload(size: usize) -> Vec<u8> {
         key: "service.name".to_string(),
         value: AnyValue::String("bench-svc".to_string()),
     }];
-    encode_export_trace_request(&attrs, "ro11y", "0.2.0", &[span])
+    encode_export_trace_request(&attrs, "rolly", "0.2.0", &[span])
 }
 
 fn bench_send_traces(c: &mut Criterion) {

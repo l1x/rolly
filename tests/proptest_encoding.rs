@@ -4,7 +4,7 @@
 //! Verifies structural correctness of our hand-rolled encoding.
 
 use proptest::prelude::*;
-use ro11y::bench::{
+use rolly::bench::{
     encode_bytes_field, encode_message_field, encode_message_field_in_place, encode_string_field,
     encode_varint_field,
 };

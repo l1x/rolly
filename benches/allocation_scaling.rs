@@ -1,5 +1,5 @@
 //! Allocation-scaling benchmark: measures total heap allocations at multiple N
-//! values for both ro11y and OTel, asserts that allocs/op stays constant
+//! values for both rolly and OTel, asserts that allocs/op stays constant
 //! (linear scaling), and catches accidental quadratic memory growth.
 //!
 //! This is a separate bench binary so the `#[global_allocator]` override
@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
 
-use ro11y::bench::*;
+use rolly::bench::*;
 
 use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry::{metrics::Meter, KeyValue};
@@ -65,7 +65,7 @@ enum ScenarioKind {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Lib {
-    Ro11y,
+    Rolly,
     OTel,
 }
 
@@ -92,10 +92,10 @@ fn otel_meter(provider: &SdkMeterProvider) -> Meter {
 }
 
 // ---------------------------------------------------------------------------
-// ro11y hot-path scenarios
+// rolly hot-path scenarios
 // ---------------------------------------------------------------------------
 
-fn measure_ro11y_counter_hot(n: usize) -> ScalingResult {
+fn measure_rolly_counter_hot(n: usize) -> ScalingResult {
     let registry = MetricsRegistry::new();
     let counter = registry.counter("requests", "total requests");
     let attrs: &[(&str, &str)] = &[
@@ -122,7 +122,7 @@ fn measure_ro11y_counter_hot(n: usize) -> ScalingResult {
     }
 }
 
-fn measure_ro11y_gauge_hot(n: usize) -> ScalingResult {
+fn measure_rolly_gauge_hot(n: usize) -> ScalingResult {
     let registry = MetricsRegistry::new();
     let gauge = registry.gauge("connections", "active connections");
     let attrs: &[(&str, &str)] = &[
@@ -148,7 +148,7 @@ fn measure_ro11y_gauge_hot(n: usize) -> ScalingResult {
     }
 }
 
-fn measure_ro11y_histogram_hot(n: usize) -> ScalingResult {
+fn measure_rolly_histogram_hot(n: usize) -> ScalingResult {
     let registry = MetricsRegistry::new();
     let hist = registry.histogram(
         "request_duration",
@@ -179,10 +179,10 @@ fn measure_ro11y_histogram_hot(n: usize) -> ScalingResult {
 }
 
 // ---------------------------------------------------------------------------
-// ro11y cold-path scenarios
+// rolly cold-path scenarios
 // ---------------------------------------------------------------------------
 
-fn measure_ro11y_counter_cold(n: usize) -> ScalingResult {
+fn measure_rolly_counter_cold(n: usize) -> ScalingResult {
     let registry = MetricsRegistry::new();
     // Raise cardinality limit so N=10000 doesn't get capped
     let counter = registry.counter_with_max_cardinality("requests", "total requests", n + 100);
@@ -211,7 +211,7 @@ fn measure_ro11y_counter_cold(n: usize) -> ScalingResult {
     }
 }
 
-fn measure_ro11y_counter_mixed(n: usize) -> ScalingResult {
+fn measure_rolly_counter_mixed(n: usize) -> ScalingResult {
     let registry = MetricsRegistry::new();
     let counter = registry.counter_with_max_cardinality("requests", "total requests", n + 100);
     let hot_attrs: &[(&str, &str)] = &[
@@ -441,22 +441,22 @@ fn assert_linear_scaling(name: &str, results: &[ScalingResult]) -> bool {
 
 struct TableRow {
     scenario: &'static str,
-    ro11y_allocs: f64,
+    rolly_allocs: f64,
     otel_allocs: Option<f64>,
-    ro11y_ns: f64,
+    rolly_ns: f64,
     otel_ns: Option<f64>,
 }
 
 fn render_svg(scenarios: &[ScenarioResults]) {
     use std::fmt::Write;
 
-    // Pair ro11y scenarios with their OTel counterparts at N=10,000
+    // Pair rolly scenarios with their OTel counterparts at N=10,000
     let pairs: &[(&str, &str, Option<&str>)] = &[
-        ("counter (hot)", "ro11y counter (hot)", Some("OTel counter (hot)")),
-        ("gauge (hot)", "ro11y gauge (hot)", None),
-        ("histogram (hot)", "ro11y histogram (hot)", None),
-        ("counter (cold)", "ro11y counter (cold)", Some("OTel counter (cold)")),
-        ("counter (mixed)", "ro11y counter (mixed)", Some("OTel counter (mixed)")),
+        ("counter (hot)", "rolly counter (hot)", Some("OTel counter (hot)")),
+        ("gauge (hot)", "rolly gauge (hot)", None),
+        ("histogram (hot)", "rolly histogram (hot)", None),
+        ("counter (cold)", "rolly counter (cold)", Some("OTel counter (cold)")),
+        ("counter (mixed)", "rolly counter (mixed)", Some("OTel counter (mixed)")),
     ];
 
     let find = |name: &str| -> Option<&ScalingResult> {
@@ -468,14 +468,14 @@ fn render_svg(scenarios: &[ScenarioResults]) {
 
     let rows: Vec<TableRow> = pairs
         .iter()
-        .map(|(label, ro11y_name, otel_name)| {
-            let ro11y = find(ro11y_name).unwrap();
+        .map(|(label, rolly_name, otel_name)| {
+            let rolly = find(rolly_name).unwrap();
             let otel = otel_name.and_then(&find);
             TableRow {
                 scenario: label,
-                ro11y_allocs: ro11y.allocs_per_op(),
+                rolly_allocs: rolly.allocs_per_op(),
                 otel_allocs: otel.map(|r| r.allocs_per_op()),
-                ro11y_ns: ro11y.ns_per_op(),
+                rolly_ns: rolly.ns_per_op(),
                 otel_ns: otel.map(|r| r.ns_per_op()),
             }
         })
@@ -519,7 +519,7 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     writeln!(svg, "<rect width=\"{w}\" height=\"{svg_h}\" fill=\"{white}\"/>").unwrap();
 
     // Title
-    writeln!(svg, "<text x=\"{}\" y=\"35\" font-size=\"20\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"{text_color}\">Allocation Scaling &#x2014; ro11y vs OTel (N = 10,000)</text>", w / 2).unwrap();
+    writeln!(svg, "<text x=\"{}\" y=\"35\" font-size=\"20\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"{text_color}\">Allocation Scaling &#x2014; rolly vs OTel (N = 10,000)</text>", w / 2).unwrap();
     writeln!(svg, "<text x=\"{}\" y=\"55\" font-size=\"12\" fill=\"{subtitle_color}\" text-anchor=\"middle\">Lower is better. Winner highlighted.</text>", w / 2).unwrap();
 
     // Table border
@@ -549,7 +549,7 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     let hy2 = hy + row_h;
     writeln!(svg, "<rect x=\"{table_x}\" y=\"{hy2}\" width=\"{table_w}\" height=\"{row_h}\" fill=\"{header_bg2}\"/>").unwrap();
     let ty2 = hy2 + 26;
-    for (col_x, label) in [(col_allocs_x, "ro11y"), (col_allocs_otel_x, "OTel"), (col_ns_x, "ro11y"), (col_ns_otel_x, "OTel")] {
+    for (col_x, label) in [(col_allocs_x, "rolly"), (col_allocs_otel_x, "OTel"), (col_ns_x, "rolly"), (col_ns_otel_x, "OTel")] {
         let cx = table_x + col_x + col_val_w / 2;
         writeln!(svg, "<text x=\"{cx}\" y=\"{ty2}\" font-size=\"13\" font-weight=\"bold\" fill=\"{header_fg}\" text-anchor=\"middle\">{label}</text>").unwrap();
     }
@@ -562,7 +562,7 @@ fn render_svg(scenarios: &[ScenarioResults]) {
 
         // Highlight winner cells
         if let Some(otel_a) = row.otel_allocs {
-            let (win_x, win_bg) = if row.ro11y_allocs <= otel_a {
+            let (win_x, win_bg) = if row.rolly_allocs <= otel_a {
                 (col_allocs_x, green)
             } else {
                 (col_allocs_otel_x, blue_bg)
@@ -570,7 +570,7 @@ fn render_svg(scenarios: &[ScenarioResults]) {
             writeln!(svg, "<rect x=\"{}\" y=\"{ry}\" width=\"{col_val_w}\" height=\"{row_h}\" fill=\"{win_bg}\"/>", table_x + win_x).unwrap();
         }
         if let Some(otel_n) = row.otel_ns {
-            let (win_x, win_bg) = if row.ro11y_ns <= otel_n {
+            let (win_x, win_bg) = if row.rolly_ns <= otel_n {
                 (col_ns_x, green)
             } else {
                 (col_ns_otel_x, blue_bg)
@@ -590,9 +590,9 @@ fn render_svg(scenarios: &[ScenarioResults]) {
         let fmt_ns = |v: f64| -> String { format!("{:.1}", v) };
 
         let vals: [(usize, String); 4] = [
-            (col_allocs_x, fmt_allocs(row.ro11y_allocs)),
+            (col_allocs_x, fmt_allocs(row.rolly_allocs)),
             (col_allocs_otel_x, row.otel_allocs.map_or("\u{2014}".to_string(), fmt_allocs)),
-            (col_ns_x, fmt_ns(row.ro11y_ns)),
+            (col_ns_x, fmt_ns(row.rolly_ns)),
             (col_ns_otel_x, row.otel_ns.map_or("\u{2014}".to_string(), fmt_ns)),
         ];
         for (col_x, val) in &vals {
@@ -615,7 +615,7 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     // Legend
     let ly = table_y + table_h + 25;
     writeln!(svg, "<rect x=\"{}\" y=\"{}\" width=\"14\" height=\"14\" fill=\"{green}\" stroke=\"{border}\" stroke-width=\"0.5\" rx=\"2\"/>", table_x, ly - 12).unwrap();
-    writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">ro11y wins</text>", table_x + 20).unwrap();
+    writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">rolly wins</text>", table_x + 20).unwrap();
     writeln!(svg, "<rect x=\"{}\" y=\"{}\" width=\"14\" height=\"14\" fill=\"{blue_bg}\" stroke=\"{border}\" stroke-width=\"0.5\" rx=\"2\"/>", table_x + 120, ly - 12).unwrap();
     writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">OTel wins</text>", table_x + 140).unwrap();
     writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_muted}\">Lower is better</text>", table_x + 240).unwrap();
@@ -636,72 +636,72 @@ fn main() -> ExitCode {
     let mut all_pass = true;
     let mut all_scenarios: Vec<ScenarioResults> = Vec::new();
 
-    // -- ro11y counter hot path --
+    // -- rolly counter hot path --
     {
-        let name = "ro11y counter (hot)";
+        let name = "rolly counter (hot)";
         println!("--- {name} ---");
-        let results: Vec<_> = NS.iter().map(|&n| measure_ro11y_counter_hot(n)).collect();
+        let results: Vec<_> = NS.iter().map(|&n| measure_rolly_counter_hot(n)).collect();
         all_pass &= assert_zero_alloc(name, &results);
         all_scenarios.push(ScenarioResults {
             name: name.to_string(),
             kind: ScenarioKind::Hot,
-            lib: Lib::Ro11y,
+            lib: Lib::Rolly,
             results,
         });
     }
 
-    // -- ro11y gauge hot path --
+    // -- rolly gauge hot path --
     {
-        let name = "ro11y gauge (hot)";
+        let name = "rolly gauge (hot)";
         println!("--- {name} ---");
-        let results: Vec<_> = NS.iter().map(|&n| measure_ro11y_gauge_hot(n)).collect();
+        let results: Vec<_> = NS.iter().map(|&n| measure_rolly_gauge_hot(n)).collect();
         all_pass &= assert_zero_alloc(name, &results);
         all_scenarios.push(ScenarioResults {
             name: name.to_string(),
             kind: ScenarioKind::Hot,
-            lib: Lib::Ro11y,
+            lib: Lib::Rolly,
             results,
         });
     }
 
-    // -- ro11y histogram hot path --
+    // -- rolly histogram hot path --
     {
-        let name = "ro11y histogram (hot)";
+        let name = "rolly histogram (hot)";
         println!("--- {name} ---");
-        let results: Vec<_> = NS.iter().map(|&n| measure_ro11y_histogram_hot(n)).collect();
+        let results: Vec<_> = NS.iter().map(|&n| measure_rolly_histogram_hot(n)).collect();
         all_pass &= assert_zero_alloc(name, &results);
         all_scenarios.push(ScenarioResults {
             name: name.to_string(),
             kind: ScenarioKind::Hot,
-            lib: Lib::Ro11y,
+            lib: Lib::Rolly,
             results,
         });
     }
 
-    // -- ro11y counter cold path --
+    // -- rolly counter cold path --
     {
-        let name = "ro11y counter (cold)";
+        let name = "rolly counter (cold)";
         println!("--- {name} ---");
-        let results: Vec<_> = NS.iter().map(|&n| measure_ro11y_counter_cold(n)).collect();
+        let results: Vec<_> = NS.iter().map(|&n| measure_rolly_counter_cold(n)).collect();
         all_pass &= assert_linear_scaling(name, &results);
         all_scenarios.push(ScenarioResults {
             name: name.to_string(),
             kind: ScenarioKind::Cold,
-            lib: Lib::Ro11y,
+            lib: Lib::Rolly,
             results,
         });
     }
 
-    // -- ro11y counter mixed path --
+    // -- rolly counter mixed path --
     {
-        let name = "ro11y counter (mixed)";
+        let name = "rolly counter (mixed)";
         println!("--- {name} ---");
-        let results: Vec<_> = NS.iter().map(|&n| measure_ro11y_counter_mixed(n)).collect();
+        let results: Vec<_> = NS.iter().map(|&n| measure_rolly_counter_mixed(n)).collect();
         all_pass &= assert_linear_scaling(name, &results);
         all_scenarios.push(ScenarioResults {
             name: name.to_string(),
             kind: ScenarioKind::Mixed,
-            lib: Lib::Ro11y,
+            lib: Lib::Rolly,
             results,
         });
     }

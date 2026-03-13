@@ -1,10 +1,10 @@
 [package]
-name = "ro11y"
+name = "rolly"
 version = "0.5.1"
 edition = "2021"
 description = "Lightweight Rust observability. Hand-rolled OTLP protobuf over HTTP, built on tracing."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/l1x/ro11y"
+repository = "https://github.com/l1x/rolly"
 keywords = ["observability", "tracing", "otlp", "telemetry", "protobuf"]
 categories = ["development-tools::debugging", "development-tools::profiling"]
 readme = "README.md"

@@ -1,10 +1,10 @@
-# ro11y
+# rolly
 
 Lightweight Rust observability. Hand-rolled OTLP protobuf over HTTP, built on [tracing](https://docs.rs/tracing).
 
 ## Core and middleware
 
-ro11y has two layers:
+rolly has two layers:
 
 **Generic core** — works with any Rust application, not just HTTP servers:
 - Custom `tracing::Layer` that captures all spans and events
@@ -38,10 +38,10 @@ All three signals follow the [OTLP specification](https://opentelemetry.io/docs/
 
 ### Metrics
 
-ro11y provides Counter, Gauge, and Histogram instruments with client-side aggregation. Metrics are accumulated in-process and flushed as `ExportMetricsServiceRequest` on a configurable interval (default 10s).
+rolly provides Counter, Gauge, and Histogram instruments with client-side aggregation. Metrics are accumulated in-process and flushed as `ExportMetricsServiceRequest` on a configurable interval (default 10s).
 
 ```rust
-use ro11y::{counter, gauge, histogram};
+use rolly::{counter, gauge, histogram};
 
 // Counters are monotonic and cumulative
 let req_counter = counter("http.server.requests", "Total HTTP requests");
@@ -67,7 +67,7 @@ When called inside a tracing span, metric recordings automatically capture an **
 ## Usage
 
 ```rust
-use ro11y::{init, TelemetryConfig};
+use rolly::{init, TelemetryConfig};
 use std::time::Duration;
 
 let _guard = init(TelemetryConfig {
@@ -126,21 +126,21 @@ The `tower` feature is enabled by default.
 ```rust
 let app = axum::Router::new()
     .route("/health", axum::routing::get(health))
-    .layer(ro11y::request_layer())       // inbound: request spans + RED metrics
-    .layer(ro11y::propagation_layer());  // outbound: W3C traceparent injection
+    .layer(rolly::request_layer())       // inbound: request spans + RED metrics
+    .layer(rolly::propagation_layer());  // outbound: W3C traceparent injection
 ```
 
 To disable Tower middleware (e.g. for non-HTTP applications):
 
 ```toml
 [dependencies]
-ro11y = { version = "0.5", default-features = false }
+rolly = { version = "0.5", default-features = false }
 ```
 
 ## Pipeline
 
 ```
-Application (tracing) → ro11y (protobuf) → HTTP POST → Vector/Collector (OTLP) → storage
+Application (tracing) → rolly (protobuf) → HTTP POST → Vector/Collector (OTLP) → storage
 ```
 
 ## Why not OpenTelemetry SDK?
@@ -150,7 +150,7 @@ Application (tracing) → ro11y (protobuf) → HTTP POST → Vector/Collector (O
 - Shutdown footgun (`drop()` doesn't flush)
 - gRPC bloat from `tonic`/`prost`
 
-ro11y hand-rolls the protobuf wire format (~200 lines). The format has been stable since 2008.
+rolly hand-rolls the protobuf wire format (~200 lines). The format has been stable since 2008.
 
 ## Dependencies
 
@@ -158,7 +158,7 @@ ro11y hand-rolls the protobuf wire format (~200 lines). The format has been stab
 
 ## Performance
 
-ro11y targets <10% CPU overhead at 3000 req/s on ARM64.
+rolly targets <10% CPU overhead at 3000 req/s on ARM64.
 
 ![Performance baseline](docs/performance.svg)
 

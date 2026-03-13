@@ -244,7 +244,7 @@ async fn metrics_aggregation_loop(
 
         let data = encode_export_metrics_request(
             &resource_attrs,
-            "ro11y",
+            "rolly",
             &service_version,
             &snapshots,
             start_time,

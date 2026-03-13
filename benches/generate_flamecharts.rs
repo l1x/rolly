@@ -1,7 +1,7 @@
 //! Generate flamechart SVGs and criterion-based comparison outputs.
 //!
 //! Produces in `docs/flamecharts/`:
-//! - `flamechart_after.svg`   — optimized ro11y Counter::add
+//! - `flamechart_after.svg`   — optimized rolly Counter::add
 //! - `flamechart_otel.svg`    — OpenTelemetry SDK 0.31 Counter::add
 //! - `comparison_table.svg`   — criterion benchmark comparison with 95% CIs
 //! - `benchmark_results.toml` — machine-readable criterion results
@@ -34,10 +34,10 @@ fn main() {
     }
 }
 
-// ── Profiling: optimized ro11y ─────────────────────────────────────────
+// ── Profiling: optimized rolly ─────────────────────────────────────────
 
 fn profile_after() {
-    use ro11y::bench::*;
+    use rolly::bench::*;
     let registry = MetricsRegistry::new();
     let counter = registry.counter("test", "test");
     counter.add(
@@ -104,7 +104,7 @@ struct BenchmarkResult {
 #[derive(Debug)]
 struct BenchmarkGroup {
     name: String,
-    ro11y: Option<BenchmarkResult>,
+    rolly: Option<BenchmarkResult>,
     otel: Option<BenchmarkResult>,
 }
 
@@ -135,7 +135,7 @@ fn read_criterion_results() -> Vec<BenchmarkGroup> {
     for entry in entries {
         let group_name = entry.file_name().to_string_lossy().to_string();
 
-        for variant_name in &["ro11y", "otel_sdk"] {
+        for variant_name in &["rolly", "otel_sdk"] {
             let estimates_path = entry
                 .path()
                 .join(variant_name)
@@ -182,12 +182,12 @@ fn read_criterion_results() -> Vec<BenchmarkGroup> {
                 .entry(group_name.clone())
                 .or_insert_with(|| BenchmarkGroup {
                     name: group_name.clone(),
-                    ro11y: None,
+                    rolly: None,
                     otel: None,
                 });
 
-            if *variant_name == "ro11y" {
-                group.ro11y = Some(result);
+            if *variant_name == "rolly" {
+                group.rolly = Some(result);
             } else {
                 group.otel = Some(result);
             }
@@ -254,10 +254,10 @@ fn write_criterion_toml(groups: &[BenchmarkGroup]) {
 
         let _ = writeln!(t, "[{}]", key);
 
-        if let Some(ref r) = g.ro11y {
-            let _ = writeln!(t, "ro11y_mean_ns = {:.1}", r.mean_ns);
-            let _ = writeln!(t, "ro11y_ci_lower = {:.1}", r.ci_lower);
-            let _ = writeln!(t, "ro11y_ci_upper = {:.1}", r.ci_upper);
+        if let Some(ref r) = g.rolly {
+            let _ = writeln!(t, "rolly_mean_ns = {:.1}", r.mean_ns);
+            let _ = writeln!(t, "rolly_ci_lower = {:.1}", r.ci_lower);
+            let _ = writeln!(t, "rolly_ci_upper = {:.1}", r.ci_upper);
         }
 
         if let Some(ref o) = g.otel {
@@ -277,7 +277,7 @@ fn write_criterion_toml(groups: &[BenchmarkGroup]) {
 // ── SVG comparison table with CIs ──────────────────────────────────────
 
 fn render_comparison_table_svg(groups: &[BenchmarkGroup]) {
-    // Columns: Scenario | ro11y (ns) | OTel SDK (ns) | Speedup
+    // Columns: Scenario | rolly (ns) | OTel SDK (ns) | Speedup
     let col_x: [f64; 5] = [20.0, 260.0, 430.0, 600.0, 740.0];
     let total_w = 760.0;
     let row_h = 40.0;
@@ -321,12 +321,12 @@ fn render_comparison_table_svg(groups: &[BenchmarkGroup]) {
     // Title
     s.push_str(
         "<text x=\"20\" y=\"28\" class=\"title\">\
-         ro11y vs OpenTelemetry SDK 0.31 \u{2014} Criterion Benchmarks (95% CI)</text>\n",
+         rolly vs OpenTelemetry SDK 0.31 \u{2014} Criterion Benchmarks (95% CI)</text>\n",
     );
     s.push_str(
         "<text x=\"20\" y=\"48\" class=\"subtitle\">\
          Values show mean \u{00b1} CI half-width in nanoseconds. \
-         Green = ro11y faster, red = ro11y slower.</text>\n",
+         Green = rolly faster, red = rolly slower.</text>\n",
     );
 
     // Header row background
@@ -347,7 +347,7 @@ fn render_comparison_table_svg(groups: &[BenchmarkGroup]) {
     // Header labels
     let headers = [
         ("Scenario", "start"),
-        ("ro11y (ns)", "end"),
+        ("rolly (ns)", "end"),
         ("OTel SDK (ns)", "end"),
         ("Speedup", "end"),
     ];
@@ -399,8 +399,8 @@ fn render_comparison_table_svg(groups: &[BenchmarkGroup]) {
             pretty
         );
 
-        // Col 1: ro11y mean +/- CI
-        if let Some(ref r) = g.ro11y {
+        // Col 1: rolly mean +/- CI
+        if let Some(ref r) = g.rolly {
             let ci_half = (r.ci_upper - r.ci_lower) / 2.0;
             let _ = writeln!(
                 s,
@@ -440,7 +440,7 @@ fn render_comparison_table_svg(groups: &[BenchmarkGroup]) {
         }
 
         // Col 3: Speedup
-        if let (Some(ref r), Some(ref o)) = (&g.ro11y, &g.otel) {
+        if let (Some(ref r), Some(ref o)) = (&g.rolly, &g.otel) {
             let speedup = o.mean_ns / r.mean_ns;
             let (class, label) = if speedup >= 1.05 {
                 ("v best", format!("{:.1}x faster", speedup))
@@ -508,7 +508,7 @@ fn generate_all() {
         (
             "--after",
             "flamechart_after.svg",
-            "ro11y Counter::add (3 attrs) \u{2014} Optimized",
+            "rolly Counter::add (3 attrs) \u{2014} Optimized",
         ),
         (
             "--otel",
@@ -520,7 +520,7 @@ fn generate_all() {
     for (arg, filename, title) in variants {
         let svg_path = format!("docs/flamecharts/{}", filename);
         let tag = arg.trim_start_matches("--");
-        let sample_path = format!("/tmp/ro11y_flamechart_{}.txt", tag);
+        let sample_path = format!("/tmp/rolly_flamechart_{}.txt", tag);
 
         eprintln!("\n=== {} ===", title);
 
@@ -599,12 +599,12 @@ fn generate_all() {
     } else {
         for g in &groups {
             let pretty = pretty_group_name(&g.name);
-            if let (Some(ref r), Some(ref o)) = (&g.ro11y, &g.otel) {
+            if let (Some(ref r), Some(ref o)) = (&g.rolly, &g.otel) {
                 let speedup = o.mean_ns / r.mean_ns;
                 let r_ci = (r.ci_upper - r.ci_lower) / 2.0;
                 let o_ci = (o.ci_upper - o.ci_lower) / 2.0;
                 eprintln!(
-                    "  {:<30} ro11y: {:.1} \u{00b1} {:.1} ns  OTel: {:.1} \u{00b1} {:.1} ns  ({:.1}x)",
+                    "  {:<30} rolly: {:.1} \u{00b1} {:.1} ns  OTel: {:.1} \u{00b1} {:.1} ns  ({:.1}x)",
                     pretty, r.mean_ns, r_ci, o.mean_ns, o_ci, speedup
                 );
             } else {
@@ -700,7 +700,7 @@ fn clean_one_frame(frame: &str) -> String {
         let func = &frame[pos + 1..];
         if lib.starts_with("generate_flamecharts")
             || lib.starts_with("comparison_otel")
-            || lib.starts_with("ro11y")
+            || lib.starts_with("rolly")
         {
             if func.contains("___rdl_alloc") {
                 return "alloc::__rdl_alloc".into();

@@ -1,12 +1,12 @@
-# How We Made ro11y 3x Faster Than OpenTelemetry SDK
+# How We Made rolly 3x Faster Than OpenTelemetry SDK
 
 A chronicle of profiling, bottleneck hunting, and surgical optimization on the metrics hot path.
 
 ## The Starting Point
 
-ro11y is a lightweight Rust observability crate — hand-rolled OTLP protobuf over HTTP, built on `tracing`. It ships traces, logs, and metrics with 7 direct dependencies where the OpenTelemetry SDK needs ~120. Compile times are seconds, not minutes.
+rolly is a lightweight Rust observability crate — hand-rolled OTLP protobuf over HTTP, built on `tracing`. It ships traces, logs, and metrics with 7 direct dependencies where the OpenTelemetry SDK needs ~120. Compile times are seconds, not minutes.
 
-But when we ran head-to-head benchmarks against `opentelemetry_sdk` 0.31, the metrics recording path told a humbling story. The pre-optimization ro11y was slower than OTel across the board — by up to 5x on the simplest operations. Something was deeply wrong.
+But when we ran head-to-head benchmarks against `opentelemetry_sdk` 0.31, the metrics recording path told a humbling story. The pre-optimization rolly was slower than OTel across the board — by up to 5x on the simplest operations. Something was deeply wrong.
 
 ## Challenge 1: The Invisible Exemplar Tax
 
@@ -137,7 +137,7 @@ The mutex is now the bottleneck — which is correct. It's the irreducible synch
 
 Criterion benchmark results (95% confidence intervals on mean):
 
-| Benchmark | ro11y (ns) | OTel SDK (ns) | vs OTel |
+| Benchmark | rolly (ns) | OTel SDK (ns) | vs OTel |
 |---|---|---|---|
 | Counter (no attrs) | 9.6 ± 0.0 | 4.9 ± 0.0 | 2.0x slower |
 | Counter (3 attrs) | **26.8 ± 0.4** | 86.4 ± 0.2 | **3.2x faster** |
@@ -147,7 +147,7 @@ Criterion benchmark results (95% confidence intervals on mean):
 
 All numbers from criterion (`cargo bench --features _bench -- comparison`) with 100+ iterations and outlier analysis. Cold-path benchmarks (first-insert with allocation) are also available via `comparison_counter_*_cold` and gauge comparisons via `comparison_gauge_*`.
 
-ro11y is 3x faster than OpenTelemetry SDK on all attributed metric operations. The no-attrs counter is still 2x behind OTel (9.6 ns vs 4.9 ns) — OTel uses a lock-free atomic increment for that case, while ro11y still takes a mutex. That's a future optimization.
+rolly is 3x faster than OpenTelemetry SDK on all attributed metric operations. The no-attrs counter is still 2x behind OTel (9.6 ns vs 4.9 ns) — OTel uses a lock-free atomic increment for that case, while rolly still takes a mutex. That's a future optimization.
 
 ## What the OTel Flamechart Reveals
 
@@ -157,7 +157,7 @@ The OTel SDK flamechart shows where its time goes on the 3-attrs counter path:
 - `_platform_memcmp` (inside comparisons): 13%
 - `drop_in_place<Value>` (dropping cloned KeyValues): 4%
 
-OTel's main cost is hashing and comparing `KeyValue` structs, which are heap-allocated `String` wrappers. ro11y uses `&str` slices — zero-copy borrows with no allocation.
+OTel's main cost is hashing and comparing `KeyValue` structs, which are heap-allocated `String` wrappers. rolly uses `&str` slices — zero-copy borrows with no allocation.
 
 ## Methodology
 

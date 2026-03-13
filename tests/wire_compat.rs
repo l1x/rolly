@@ -1,6 +1,6 @@
 #![cfg(feature = "_bench")]
 
-//! Wire compatibility tests: encode with ro11y's hand-rolled protobuf,
+//! Wire compatibility tests: encode with rolly's hand-rolled protobuf,
 //! decode with prost / opentelemetry-proto, and assert field-level correctness.
 
 use prost::Message;
@@ -11,7 +11,7 @@ use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 
 use std::sync::Arc;
 
-use ro11y::bench::{
+use rolly::bench::{
     encode_export_logs_request, encode_export_metrics_request, encode_export_trace_request,
     AnyValue, Exemplar, ExemplarValue, HistogramDataPoint, KeyValue, LogData, MetricSnapshot,
     SeverityNumber, SpanData, SpanKind, SpanStatus, StatusCode,
@@ -76,7 +76,7 @@ fn trace_request_decodes_via_prost() {
         }),
     };
 
-    let bytes = encode_export_trace_request(&resource_attrs(), "ro11y", "1.0.0", &[span]);
+    let bytes = encode_export_trace_request(&resource_attrs(), "rolly", "1.0.0", &[span]);
     let req = ExportTraceServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     assert_eq!(req.resource_spans.len(), 1);
@@ -102,7 +102,7 @@ fn trace_request_decodes_via_prost() {
     assert_eq!(rs.scope_spans.len(), 1);
     let ss = &rs.scope_spans[0];
     let scope = ss.scope.as_ref().expect("scope missing");
-    assert_eq!(scope.name, "ro11y");
+    assert_eq!(scope.name, "rolly");
     assert_eq!(scope.version, "1.0.0");
 
     // Span
@@ -181,7 +181,7 @@ fn trace_empty_attributes_decode() {
         status: None,
     };
 
-    let bytes = encode_export_trace_request(&[], "ro11y", "1.0.0", &[span]);
+    let bytes = encode_export_trace_request(&[], "rolly", "1.0.0", &[span]);
     let req = ExportTraceServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     let s = &req.resource_spans[0].scope_spans[0].spans[0];
@@ -205,7 +205,7 @@ fn trace_multiple_spans_decode() {
         })
         .collect();
 
-    let bytes = encode_export_trace_request(&resource_attrs(), "ro11y", "1.0.0", &spans);
+    let bytes = encode_export_trace_request(&resource_attrs(), "rolly", "1.0.0", &spans);
     let req = ExportTraceServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     let decoded_spans = &req.resource_spans[0].scope_spans[0].spans;
@@ -234,14 +234,14 @@ fn log_request_decodes_via_prost() {
         span_id: [0x22; 8],
     };
 
-    let bytes = encode_export_logs_request(&resource_attrs(), "ro11y", "1.0.0", &[log]);
+    let bytes = encode_export_logs_request(&resource_attrs(), "rolly", "1.0.0", &[log]);
     let req = ExportLogsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     assert_eq!(req.resource_logs.len(), 1);
     let rl = &req.resource_logs[0];
     let sl = &rl.scope_logs[0];
     let scope = sl.scope.as_ref().unwrap();
-    assert_eq!(scope.name, "ro11y");
+    assert_eq!(scope.name, "rolly");
 
     assert_eq!(sl.log_records.len(), 1);
     let lr = &sl.log_records[0];
@@ -289,7 +289,7 @@ fn log_all_severity_levels() {
             span_id: [0; 8],
         };
 
-        let bytes = encode_export_logs_request(&[], "ro11y", "1.0.0", &[log]);
+        let bytes = encode_export_logs_request(&[], "rolly", "1.0.0", &[log]);
         let req = ExportLogsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
         let lr = &req.resource_logs[0].scope_logs[0].log_records[0];
@@ -322,7 +322,7 @@ fn counter_metric_decodes_via_prost() {
 
     let bytes = encode_export_metrics_request(
         &resource_attrs(),
-        "ro11y",
+        "rolly",
         "1.0.0",
         &snapshots,
         1_000_000_000,
@@ -368,7 +368,7 @@ fn gauge_metric_decodes_via_prost() {
 
     let bytes = encode_export_metrics_request(
         &resource_attrs(),
-        "ro11y",
+        "rolly",
         "1.0.0",
         &snapshots,
         1_000_000_000,
@@ -418,7 +418,7 @@ fn histogram_metric_decodes_via_prost() {
 
     let bytes = encode_export_metrics_request(
         &resource_attrs(),
-        "ro11y",
+        "rolly",
         "1.0.0",
         &snapshots,
         1_000_000_000,
@@ -482,7 +482,7 @@ fn histogram_multiple_data_points_decode() {
     }];
 
     let bytes =
-        encode_export_metrics_request(&resource_attrs(), "ro11y", "1.0.0", &snapshots, 0, 0);
+        encode_export_metrics_request(&resource_attrs(), "rolly", "1.0.0", &snapshots, 0, 0);
     let req = ExportMetricsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     match req.resource_metrics[0].scope_metrics[0].metrics[0]
@@ -527,7 +527,7 @@ fn mixed_metrics_decode() {
     ];
 
     let bytes =
-        encode_export_metrics_request(&resource_attrs(), "ro11y", "1.0.0", &snapshots, 0, 0);
+        encode_export_metrics_request(&resource_attrs(), "rolly", "1.0.0", &snapshots, 0, 0);
     let req = ExportMetricsServiceRequest::decode(bytes.as_slice()).expect("decode failed");
 
     let metrics = &req.resource_metrics[0].scope_metrics[0].metrics;
@@ -579,7 +579,7 @@ fn counter_with_exemplar_decodes_via_prost() {
 
     let bytes = encode_export_metrics_request(
         &resource_attrs(),
-        "ro11y",
+        "rolly",
         "1.0.0",
         &snapshots,
         1_000_000_000,
@@ -639,7 +639,7 @@ fn histogram_with_exemplar_decodes_via_prost() {
 
     let bytes = encode_export_metrics_request(
         &resource_attrs(),
-        "ro11y",
+        "rolly",
         "1.0.0",
         &snapshots,
         1_000_000_000,

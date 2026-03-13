@@ -1,11 +1,11 @@
-# PRD: ro11y — Lightweight Rust Observability
+# PRD: rolly — Lightweight Rust Observability
 
 **Version:** 1.0
 **Date:** 2026-03-07
 **Status:** Active
 **Target Scale:** 2 Billion+ HTTP requests / month (~770+ req/s sustained)
-**Repository:** [github.com/l1x/ro11y](https://github.com/l1x/ro11y)
-**crates.io:** [crates.io/crates/ro11y](https://crates.io/crates/ro11y)
+**Repository:** [github.com/l1x/rolly](https://github.com/l1x/rolly)
+**crates.io:** [crates.io/crates/rolly](https://crates.io/crates/rolly)
 **License:** MIT OR Apache-2.0
 
 ---
@@ -20,9 +20,9 @@ The OpenTelemetry Rust SDK is the standard approach for exporting telemetry from
 - **Fragile bridge** — `tracing-opentelemetry` breaks on every OTEL release. Undocumented version matrix between `tracing-subscriber`, `opentelemetry`, and `opentelemetry_sdk`.
 - **Extreme Scale** — High-throughput services (2B+ req/month) struggle with the overhead of standard SDKs and require surgical control over allocations and export batching.
 
-ro11y replaces the OpenTelemetry SDK entirely with ~2,000 lines of hand-rolled code and 7 direct dependencies.
+rolly replaces the OpenTelemetry SDK entirely with ~2,000 lines of hand-rolled code and 7 direct dependencies.
 
-## 2. What ro11y Is
+## 2. What rolly Is
 
 A Rust crate that bridges the `tracing` ecosystem to OTLP-compatible collectors via hand-rolled protobuf over HTTP. It is:
 
@@ -31,7 +31,7 @@ A Rust crate that bridges the `tracing` ecosystem to OTLP-compatible collectors 
 - **HTTP middleware** — Tower layers for inbound request instrumentation and outbound trace context propagation.
 - **Framework-agnostic at the core** — the export pipeline works with any `tracing` span or event, not just HTTP. Queue consumers, batch jobs, CLI tools — anything that uses `tracing` gets OTLP export for free.
 
-## 3. What ro11y Is Not
+## 3. What rolly Is Not
 
 - Not a dashboarding or alerting system
 - Not a replacement for `tracing` — it builds on top of it

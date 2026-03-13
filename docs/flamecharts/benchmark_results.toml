@@ -3,41 +3,41 @@
 generated_unix = 1773346081
 
 [counter_3_attrs]
-ro11y_mean_ns = 26.8
-ro11y_ci_lower = 26.5
-ro11y_ci_upper = 27.3
+rolly_mean_ns = 26.8
+rolly_ci_lower = 26.5
+rolly_ci_upper = 27.3
 otel_mean_ns = 86.4
 otel_ci_lower = 86.3
 otel_ci_upper = 86.6
 
 [counter_5_attrs]
-ro11y_mean_ns = 43.1
-ro11y_ci_lower = 43.0
-ro11y_ci_upper = 43.1
+rolly_mean_ns = 43.1
+rolly_ci_lower = 43.0
+rolly_ci_upper = 43.1
 otel_mean_ns = 132.8
 otel_ci_lower = 132.5
 otel_ci_upper = 133.2
 
 [counter_no_attrs]
-ro11y_mean_ns = 9.6
-ro11y_ci_lower = 9.6
-ro11y_ci_upper = 9.6
+rolly_mean_ns = 9.6
+rolly_ci_lower = 9.6
+rolly_ci_upper = 9.6
 otel_mean_ns = 4.9
 otel_ci_lower = 4.9
 otel_ci_upper = 4.9
 
 [histogram_3_attrs]
-ro11y_mean_ns = 29.2
-ro11y_ci_lower = 29.1
-ro11y_ci_upper = 29.2
+rolly_mean_ns = 29.2
+rolly_ci_lower = 29.1
+rolly_ci_upper = 29.2
 otel_mean_ns = 88.1
 otel_ci_lower = 87.9
 otel_ci_upper = 88.3
 
 [histogram_5_attrs]
-ro11y_mean_ns = 47.2
-ro11y_ci_lower = 47.2
-ro11y_ci_upper = 47.3
+rolly_mean_ns = 47.2
+rolly_ci_lower = 47.2
+rolly_ci_upper = 47.3
 otel_mean_ns = 139.5
 otel_ci_lower = 139.3
 otel_ci_upper = 139.8

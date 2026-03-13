@@ -4,7 +4,7 @@
 //! Verifies that the sampling decision is deterministic and thread-safe:
 //! all threads must agree on the result for the same (trace_id, rate) pair.
 
-use ro11y::bench::should_sample;
+use rolly::bench::should_sample;
 use std::sync::{Arc, Barrier};
 
 /// Spawn `num_threads` threads, each calling `should_sample` for every

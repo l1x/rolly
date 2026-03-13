@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ro11y::bench::*;
+use rolly::bench::*;
 
 fn bench_encode_message_field_in_place(c: &mut Criterion) {
     let mut group = c.benchmark_group("encode_message_field_in_place");

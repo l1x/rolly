@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ro11y::bench::*;
+use rolly::bench::*;
 
 fn test_span() -> SpanData {
     SpanData {
@@ -76,7 +76,7 @@ fn bench_encode_trace_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_trace_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&spans_1),
             ));
@@ -87,7 +87,7 @@ fn bench_encode_trace_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_trace_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&spans_10),
             ));
@@ -98,7 +98,7 @@ fn bench_encode_trace_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_trace_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&spans_100),
             ));
@@ -120,7 +120,7 @@ fn bench_encode_logs_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_logs_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&logs_1),
             ));
@@ -131,7 +131,7 @@ fn bench_encode_logs_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_logs_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&logs_10),
             ));
@@ -142,7 +142,7 @@ fn bench_encode_logs_request(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_logs_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&logs_100),
             ));
@@ -163,7 +163,7 @@ fn bench_attribute_heavy_spans(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_trace_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&spans_1_attr),
             ));
@@ -174,7 +174,7 @@ fn bench_attribute_heavy_spans(c: &mut Criterion) {
         b.iter(|| {
             black_box(encode_export_trace_request(
                 black_box(&attrs),
-                "ro11y",
+                "rolly",
                 "0.2.0",
                 black_box(&spans_10_attrs),
             ));
