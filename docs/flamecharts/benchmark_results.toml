@@ -1,44 +1,121 @@
 # Source: criterion benchmark results
 # Run: cargo bench --features _bench -- comparison
-generated_unix = 1773346081
+generated_unix = 1773402846
+
+[counter_10_attrs]
+rolly_mean_ns = 90.7
+rolly_ci_lower = 90.5
+rolly_ci_upper = 90.8
+otel_mean_ns = 257.6
+otel_ci_lower = 257.2
+otel_ci_upper = 257.9
+
+[counter_16_attrs]
+rolly_mean_ns = 143.1
+rolly_ci_lower = 142.8
+rolly_ci_upper = 143.4
+otel_mean_ns = 406.5
+otel_ci_lower = 405.6
+otel_ci_upper = 407.5
 
 [counter_3_attrs]
-rolly_mean_ns = 26.8
-rolly_ci_lower = 26.5
-rolly_ci_upper = 27.3
-otel_mean_ns = 86.4
-otel_ci_lower = 86.3
-otel_ci_upper = 86.6
+rolly_mean_ns = 26.2
+rolly_ci_lower = 26.2
+rolly_ci_upper = 26.2
+otel_mean_ns = 88.8
+otel_ci_lower = 88.7
+otel_ci_upper = 88.9
+
+[counter_3_attrs_cold]
+rolly_mean_ns = 406.1
+rolly_ci_lower = 405.4
+rolly_ci_upper = 406.8
+otel_mean_ns = 2512.2
+otel_ci_lower = 2506.6
+otel_ci_upper = 2518.1
 
 [counter_5_attrs]
-rolly_mean_ns = 43.1
-rolly_ci_lower = 43.0
-rolly_ci_upper = 43.1
-otel_mean_ns = 132.8
-otel_ci_lower = 132.5
-otel_ci_upper = 133.2
+rolly_mean_ns = 43.0
+rolly_ci_lower = 42.9
+rolly_ci_upper = 43.0
+otel_mean_ns = 132.9
+otel_ci_lower = 132.7
+otel_ci_upper = 133.1
+
+[counter_5_attrs_cold]
+rolly_mean_ns = 520.3
+rolly_ci_lower = 519.5
+rolly_ci_upper = 521.1
+otel_mean_ns = 2663.1
+otel_ci_lower = 2658.1
+otel_ci_upper = 2668.1
+
+[counter_8_attrs]
+rolly_mean_ns = 68.4
+rolly_ci_lower = 68.4
+rolly_ci_upper = 68.5
+otel_mean_ns = 206.3
+otel_ci_lower = 206.0
+otel_ci_upper = 206.5
 
 [counter_no_attrs]
-rolly_mean_ns = 9.6
-rolly_ci_lower = 9.6
-rolly_ci_upper = 9.6
 otel_mean_ns = 4.9
 otel_ci_lower = 4.9
 otel_ci_upper = 4.9
 
+[gauge_3_attrs]
+rolly_mean_ns = 25.7
+rolly_ci_lower = 25.7
+rolly_ci_upper = 25.7
+otel_mean_ns = 81.5
+otel_ci_lower = 81.4
+otel_ci_upper = 81.6
+
+[gauge_5_attrs]
+rolly_mean_ns = 42.3
+rolly_ci_lower = 42.1
+rolly_ci_upper = 42.5
+otel_mean_ns = 132.1
+otel_ci_lower = 131.9
+otel_ci_upper = 132.3
+
+[histogram_10_attrs]
+rolly_mean_ns = 93.7
+rolly_ci_lower = 93.5
+rolly_ci_upper = 93.8
+otel_mean_ns = 263.7
+otel_ci_lower = 263.4
+otel_ci_upper = 264.1
+
+[histogram_16_attrs]
+rolly_mean_ns = 146.5
+rolly_ci_lower = 146.3
+rolly_ci_upper = 146.8
+otel_mean_ns = 411.4
+otel_ci_lower = 410.7
+otel_ci_upper = 412.3
+
 [histogram_3_attrs]
-rolly_mean_ns = 29.2
-rolly_ci_lower = 29.1
-rolly_ci_upper = 29.2
-otel_mean_ns = 88.1
-otel_ci_lower = 87.9
-otel_ci_upper = 88.3
+rolly_mean_ns = 28.6
+rolly_ci_lower = 28.6
+rolly_ci_upper = 28.7
+otel_mean_ns = 89.2
+otel_ci_lower = 89.0
+otel_ci_upper = 89.3
 
 [histogram_5_attrs]
-rolly_mean_ns = 47.2
-rolly_ci_lower = 47.2
-rolly_ci_upper = 47.3
-otel_mean_ns = 139.5
-otel_ci_lower = 139.3
-otel_ci_upper = 139.8
+rolly_mean_ns = 46.3
+rolly_ci_lower = 46.2
+rolly_ci_upper = 46.4
+otel_mean_ns = 139.1
+otel_ci_lower = 138.9
+otel_ci_upper = 139.3
+
+[histogram_8_attrs]
+rolly_mean_ns = 71.0
+rolly_ci_lower = 70.9
+rolly_ci_upper = 71.1
+otel_mean_ns = 211.8
+otel_ci_lower = 211.5
+otel_ci_upper = 212.1
 

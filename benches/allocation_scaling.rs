@@ -452,11 +452,23 @@ fn render_svg(scenarios: &[ScenarioResults]) {
 
     // Pair rolly scenarios with their OTel counterparts at N=10,000
     let pairs: &[(&str, &str, Option<&str>)] = &[
-        ("counter (hot)", "rolly counter (hot)", Some("OTel counter (hot)")),
+        (
+            "counter (hot)",
+            "rolly counter (hot)",
+            Some("OTel counter (hot)"),
+        ),
         ("gauge (hot)", "rolly gauge (hot)", None),
         ("histogram (hot)", "rolly histogram (hot)", None),
-        ("counter (cold)", "rolly counter (cold)", Some("OTel counter (cold)")),
-        ("counter (mixed)", "rolly counter (mixed)", Some("OTel counter (mixed)")),
+        (
+            "counter (cold)",
+            "rolly counter (cold)",
+            Some("OTel counter (cold)"),
+        ),
+        (
+            "counter (mixed)",
+            "rolly counter (mixed)",
+            Some("OTel counter (mixed)"),
+        ),
     ];
 
     let find = |name: &str| -> Option<&ScalingResult> {
@@ -500,8 +512,8 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     let col_ns_otel_x = col_ns_x + col_val_w;
     let table_w = col_ns_otel_x + col_val_w;
 
-    let green = "#E8F5E9";        // light green bg for winner
-    let blue_bg = "#E3F2FD";      // light blue bg for winner
+    let green = "#E8F5E9"; // light green bg for winner
+    let blue_bg = "#E3F2FD"; // light blue bg for winner
     let header_bg = "#37474F";
     let header_bg2 = "#455A64";
     let header_fg = "#FFFFFF";
@@ -516,7 +528,11 @@ fn render_svg(scenarios: &[ScenarioResults]) {
 
     let mut svg = String::with_capacity(4096);
     writeln!(svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{svg_h}\" font-family=\"monospace, Menlo, Consolas, 'Courier New'\">").unwrap();
-    writeln!(svg, "<rect width=\"{w}\" height=\"{svg_h}\" fill=\"{white}\"/>").unwrap();
+    writeln!(
+        svg,
+        "<rect width=\"{w}\" height=\"{svg_h}\" fill=\"{white}\"/>"
+    )
+    .unwrap();
 
     // Title
     writeln!(svg, "<text x=\"{}\" y=\"35\" font-size=\"20\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"{text_color}\">Allocation Scaling &#x2014; rolly vs OTel (N = 10,000)</text>", w / 2).unwrap();
@@ -529,7 +545,12 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     let hy = table_y;
     writeln!(svg, "<rect x=\"{table_x}\" y=\"{hy}\" width=\"{table_w}\" height=\"{row_h}\" fill=\"{header_bg}\" rx=\"4\"/>").unwrap();
     // Fix bottom corners (cover the rounded bottom)
-    writeln!(svg, "<rect x=\"{table_x}\" y=\"{}\" width=\"{table_w}\" height=\"4\" fill=\"{header_bg}\"/>", hy + row_h - 4).unwrap();
+    writeln!(
+        svg,
+        "<rect x=\"{table_x}\" y=\"{}\" width=\"{table_w}\" height=\"4\" fill=\"{header_bg}\"/>",
+        hy + row_h - 4
+    )
+    .unwrap();
 
     let scenario_cx = table_x + col_scenario_w / 2;
     let allocs_cx = table_x + col_allocs_x + col_val_w; // center of 2 columns
@@ -549,7 +570,12 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     let hy2 = hy + row_h;
     writeln!(svg, "<rect x=\"{table_x}\" y=\"{hy2}\" width=\"{table_w}\" height=\"{row_h}\" fill=\"{header_bg2}\"/>").unwrap();
     let ty2 = hy2 + 26;
-    for (col_x, label) in [(col_allocs_x, "rolly"), (col_allocs_otel_x, "OTel"), (col_ns_x, "rolly"), (col_ns_otel_x, "OTel")] {
+    for (col_x, label) in [
+        (col_allocs_x, "rolly"),
+        (col_allocs_otel_x, "OTel"),
+        (col_ns_x, "rolly"),
+        (col_ns_otel_x, "OTel"),
+    ] {
         let cx = table_x + col_x + col_val_w / 2;
         writeln!(svg, "<text x=\"{cx}\" y=\"{ty2}\" font-size=\"13\" font-weight=\"bold\" fill=\"{header_fg}\" text-anchor=\"middle\">{label}</text>").unwrap();
     }
@@ -581,19 +607,35 @@ fn render_svg(scenarios: &[ScenarioResults]) {
         let ty = ry + 26;
 
         // Scenario name
-        writeln!(svg, "<text x=\"{}\" y=\"{ty}\" font-size=\"13\" fill=\"{text_color}\">{}</text>", table_x + 12, row.scenario).unwrap();
+        writeln!(
+            svg,
+            "<text x=\"{}\" y=\"{ty}\" font-size=\"13\" fill=\"{text_color}\">{}</text>",
+            table_x + 12,
+            row.scenario
+        )
+        .unwrap();
 
         // Values
         let fmt_allocs = |v: f64| -> String {
-            if v == 0.0 { "0".to_string() } else { format!("{:.2}", v) }
+            if v == 0.0 {
+                "0".to_string()
+            } else {
+                format!("{:.2}", v)
+            }
         };
         let fmt_ns = |v: f64| -> String { format!("{:.1}", v) };
 
         let vals: [(usize, String); 4] = [
             (col_allocs_x, fmt_allocs(row.rolly_allocs)),
-            (col_allocs_otel_x, row.otel_allocs.map_or("\u{2014}".to_string(), fmt_allocs)),
+            (
+                col_allocs_otel_x,
+                row.otel_allocs.map_or("\u{2014}".to_string(), fmt_allocs),
+            ),
             (col_ns_x, fmt_ns(row.rolly_ns)),
-            (col_ns_otel_x, row.otel_ns.map_or("\u{2014}".to_string(), fmt_ns)),
+            (
+                col_ns_otel_x,
+                row.otel_ns.map_or("\u{2014}".to_string(), fmt_ns),
+            ),
         ];
         for (col_x, val) in &vals {
             let cx = table_x + col_x + col_val_w - 16;
@@ -615,10 +657,25 @@ fn render_svg(scenarios: &[ScenarioResults]) {
     // Legend
     let ly = table_y + table_h + 25;
     writeln!(svg, "<rect x=\"{}\" y=\"{}\" width=\"14\" height=\"14\" fill=\"{green}\" stroke=\"{border}\" stroke-width=\"0.5\" rx=\"2\"/>", table_x, ly - 12).unwrap();
-    writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">rolly wins</text>", table_x + 20).unwrap();
+    writeln!(
+        svg,
+        "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">rolly wins</text>",
+        table_x + 20
+    )
+    .unwrap();
     writeln!(svg, "<rect x=\"{}\" y=\"{}\" width=\"14\" height=\"14\" fill=\"{blue_bg}\" stroke=\"{border}\" stroke-width=\"0.5\" rx=\"2\"/>", table_x + 120, ly - 12).unwrap();
-    writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">OTel wins</text>", table_x + 140).unwrap();
-    writeln!(svg, "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_muted}\">Lower is better</text>", table_x + 240).unwrap();
+    writeln!(
+        svg,
+        "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_text}\">OTel wins</text>",
+        table_x + 140
+    )
+    .unwrap();
+    writeln!(
+        svg,
+        "<text x=\"{}\" y=\"{ly}\" font-size=\"12\" fill=\"{legend_muted}\">Lower is better</text>",
+        table_x + 240
+    )
+    .unwrap();
 
     writeln!(svg, "</svg>").unwrap();
 
