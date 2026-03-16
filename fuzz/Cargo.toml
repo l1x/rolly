@@ -1,0 +1,35 @@
+[package]
+name = "rolly-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.rolly]
+path = ".."
+features = ["_bench"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_encode_trace"
+path = "fuzz_targets/fuzz_encode_trace.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_encode_logs"
+path = "fuzz_targets/fuzz_encode_logs.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_hex_to_bytes_16"
+path = "fuzz_targets/fuzz_hex_to_bytes_16.rs"
+doc = false
