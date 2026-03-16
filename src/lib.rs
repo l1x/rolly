@@ -294,6 +294,10 @@ pub mod bench {
     pub use crate::proto::{encode_message_field, encode_message_field_in_place};
     pub use crate::trace_id::{generate_span_id, generate_trace_id, hex_encode};
 
+    pub fn hex_to_bytes_16(s: &str) -> Result<[u8; 16], ()> {
+        crate::otlp_layer::hex_to_bytes_16(s)
+    }
+
     // Thin wrappers for pub(crate) proto functions
     pub fn encode_varint_field(buf: &mut Vec<u8>, field: u32, val: u64) {
         crate::proto::encode_varint_field(buf, field, val);

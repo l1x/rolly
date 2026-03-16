@@ -7,6 +7,10 @@ use proptest::prelude::*;
 use rolly::bench::{
     encode_bytes_field, encode_message_field, encode_message_field_in_place, encode_string_field,
     encode_varint_field,
+    // Higher-level encoding
+    encode_export_logs_request, encode_export_trace_request,
+    hex_encode, hex_to_bytes_16,
+    AnyValue, KeyValue, LogData, SeverityNumber, SpanData, SpanKind, SpanStatus, StatusCode,
 };
 
 /// Decode a varint from a byte slice, returning (value, bytes_consumed).
@@ -138,5 +142,144 @@ proptest! {
         let (length, len_len) = decode_varint(&buf[tag_len..]);
         prop_assert_eq!(length as usize, s.len());
         prop_assert_eq!(tag_len + len_len + s.len(), buf.len());
+    }
+}
+
+// --- Strategy helpers for higher-level encoding proptests ---
+
+fn arb_any_value() -> impl Strategy<Value = AnyValue> {
+    prop_oneof![
+        "[a-zA-Z0-9 ]{0,64}".prop_map(AnyValue::String),
+        any::<i64>().prop_map(AnyValue::Int),
+        any::<bool>().prop_map(AnyValue::Bool),
+        any::<f64>().prop_map(AnyValue::Double),
+        proptest::collection::vec(any::<u8>(), 0..32).prop_map(AnyValue::Bytes),
+    ]
+}
+
+fn arb_key_value() -> impl Strategy<Value = KeyValue> {
+    ("[a-zA-Z][a-zA-Z0-9_.]{0,31}", arb_any_value()).prop_map(|(key, value)| KeyValue {
+        key,
+        value,
+    })
+}
+
+fn arb_span_kind() -> impl Strategy<Value = SpanKind> {
+    prop_oneof![
+        Just(SpanKind::Unspecified),
+        Just(SpanKind::Internal),
+        Just(SpanKind::Server),
+        Just(SpanKind::Client),
+        Just(SpanKind::Producer),
+        Just(SpanKind::Consumer),
+    ]
+}
+
+fn arb_status_code() -> impl Strategy<Value = StatusCode> {
+    prop_oneof![
+        Just(StatusCode::Unset),
+        Just(StatusCode::Ok),
+        Just(StatusCode::Error),
+    ]
+}
+
+fn arb_span_data() -> impl Strategy<Value = SpanData> {
+    (
+        any::<[u8; 16]>(),                                    // trace_id
+        any::<[u8; 8]>(),                                     // span_id
+        any::<[u8; 8]>(),                                     // parent_span_id
+        "[a-zA-Z][a-zA-Z0-9_. ]{0,63}",                      // name
+        arb_span_kind(),
+        any::<u64>(),                                         // start_time
+        any::<u64>(),                                         // end_time
+        proptest::collection::vec(arb_key_value(), 0..8),     // attributes
+        proptest::option::of(
+            ("[a-zA-Z0-9 ]{0,32}", arb_status_code())
+                .prop_map(|(msg, code)| SpanStatus { message: msg, code })
+        ),
+    )
+        .prop_map(
+            |(trace_id, span_id, parent_span_id, name, kind, start, end, attributes, status)| {
+                SpanData {
+                    trace_id,
+                    span_id,
+                    parent_span_id,
+                    name,
+                    kind,
+                    start_time_unix_nano: start,
+                    end_time_unix_nano: end,
+                    attributes,
+                    status,
+                }
+            },
+        )
+}
+
+fn arb_severity_number() -> impl Strategy<Value = SeverityNumber> {
+    prop_oneof![
+        Just(SeverityNumber::Trace),
+        Just(SeverityNumber::Debug),
+        Just(SeverityNumber::Info),
+        Just(SeverityNumber::Warn),
+        Just(SeverityNumber::Error),
+        Just(SeverityNumber::Fatal),
+    ]
+}
+
+fn arb_log_data() -> impl Strategy<Value = LogData> {
+    (
+        any::<u64>(),                                         // time_unix_nano
+        arb_severity_number(),
+        "[A-Z]{1,8}",                                        // severity_text
+        arb_any_value(),                                      // body
+        proptest::collection::vec(arb_key_value(), 0..8),     // attributes
+        any::<[u8; 16]>(),                                    // trace_id
+        any::<[u8; 8]>(),                                     // span_id
+    )
+        .prop_map(
+            |(time_unix_nano, severity_number, severity_text, body, attributes, trace_id, span_id)| {
+                LogData {
+                    time_unix_nano,
+                    severity_number,
+                    severity_text,
+                    body,
+                    attributes,
+                    trace_id,
+                    span_id,
+                }
+            },
+        )
+}
+
+proptest! {
+    #[test]
+    fn encode_trace_request_no_panic(
+        spans in proptest::collection::vec(arb_span_data(), 1..=4),
+        resource_attrs in proptest::collection::vec(arb_key_value(), 0..4),
+    ) {
+        let buf = encode_export_trace_request(&resource_attrs, "rolly", "0.1.0", &spans);
+        prop_assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn encode_logs_request_no_panic(
+        logs in proptest::collection::vec(arb_log_data(), 1..=4),
+        resource_attrs in proptest::collection::vec(arb_key_value(), 0..4),
+    ) {
+        let buf = encode_export_logs_request(&resource_attrs, "rolly", "0.1.0", &logs);
+        prop_assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn hex_to_bytes_16_roundtrip(s in "\\PC{0,64}") {
+        let result = hex_to_bytes_16(&s);
+        let is_valid_hex_32 = s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit());
+        if is_valid_hex_32 {
+            let bytes = result.unwrap();
+            let roundtrip = hex_encode(&bytes);
+            prop_assert_eq!(roundtrip, s.to_ascii_lowercase());
+        } else {
+            prop_assert!(result.is_err());
+        }
     }
 }
