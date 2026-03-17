@@ -119,7 +119,8 @@ fn sampled_out_produces_zero_channel_messages_under_concurrency() {
     use tracing_subscriber::layer::SubscriberExt;
 
     let before = rolly::telemetry_dropped_total();
-    let (exporter, mut rx) = Exporter::start_test_with_capacity(1024);
+    let (exporter, mut rx) =
+        Exporter::start_test_with_capacity(1024, rolly::bench::BackpressureStrategy::Drop);
     let layer = OtlpLayer::new(exporter, "sample-test", "0.0.1", "test", true, true, 0.0);
     let subscriber = tracing_subscriber::registry().with(layer);
     let dispatch = tracing::Dispatch::new(subscriber);

@@ -66,7 +66,7 @@ fn bench_subscriber() -> (
     impl tracing::Subscriber,
     tokio::sync::mpsc::Receiver<ExportMessage>,
 ) {
-    let (exporter, rx) = Exporter::start_test_with_capacity(1_000_000);
+    let (exporter, rx) = Exporter::start_test_with_capacity(1_000_000, BackpressureStrategy::Drop);
     let layer = OtlpLayer::new(
         exporter,
         "bench-ecommerce",

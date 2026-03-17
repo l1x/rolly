@@ -11,7 +11,7 @@ fn make_dispatch(
     tracing::Dispatch,
     tokio::sync::mpsc::Receiver<ExportMessage>,
 ) {
-    let (exporter, rx) = Exporter::start_test_with_capacity(capacity);
+    let (exporter, rx) = Exporter::start_test_with_capacity(capacity, BackpressureStrategy::Drop);
     let layer = OtlpLayer::new(
         exporter,
         "bench-svc",

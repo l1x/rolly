@@ -81,6 +81,7 @@ let _guard = init(TelemetryConfig {
     use_metrics_interval: Some(Duration::from_secs(30)),
     metrics_flush_interval: None, // default 10s
     sampling_rate: Some(0.1),    // export 10% of traces
+    backpressure_strategy: rolly::BackpressureStrategy::Drop,
 });
 
 // All tracing spans/events are now exported as OTLP protobuf
@@ -103,6 +104,7 @@ let _guard = init(TelemetryConfig {
     use_metrics_interval: None,
     metrics_flush_interval: Some(Duration::from_secs(15)),
     sampling_rate: Some(0.01), // export 1% of traces
+    backpressure_strategy: rolly::BackpressureStrategy::Drop,
 });
 ```
 

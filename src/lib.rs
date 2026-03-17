@@ -16,6 +16,7 @@ pub use tower::propagation::PropagationLayer;
 #[cfg(feature = "tower")]
 pub use tower::request::CfRequestIdLayer;
 
+pub use exporter::BackpressureStrategy;
 pub use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
 
 use std::time::Duration;
@@ -52,6 +53,9 @@ pub struct TelemetryConfig {
     /// same decision across services. Metrics are never sampled.
     /// Defaults to 1.0 (no sampling) if None.
     pub sampling_rate: Option<f64>,
+    /// What to do when the export channel is full.
+    /// Defaults to `BackpressureStrategy::Drop`.
+    pub backpressure_strategy: BackpressureStrategy,
 }
 
 /// Guard that flushes pending telemetry on drop.
@@ -129,6 +133,7 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
             batch_size: 512,
             flush_interval: Duration::from_secs(1),
             max_concurrent_exports: 4,
+            backpressure_strategy: config.backpressure_strategy,
         });
         let sampling_rate = config.sampling_rate.unwrap_or(1.0).clamp(0.0, 1.0);
         let layer = if export_traces || export_logs {
@@ -275,7 +280,7 @@ pub fn propagation_layer() -> PropagationLayer {
 #[cfg(feature = "_bench")]
 #[doc(hidden)]
 pub mod bench {
-    pub use crate::exporter::{ExportMessage, Exporter, ExporterConfig};
+    pub use crate::exporter::{BackpressureStrategy, ExportMessage, Exporter, ExporterConfig};
     pub use crate::metrics::{
         counter, gauge, global_registry, histogram, Attrs, Counter, CounterDataPoint, Exemplar,
         ExemplarValue, Gauge, GaugeDataPoint, Histogram, HistogramDataPoint, MetricSnapshot,
@@ -327,6 +332,7 @@ mod tests {
             use_metrics_interval: None,
             metrics_flush_interval: None,
             sampling_rate: None,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
     }
 

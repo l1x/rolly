@@ -40,7 +40,8 @@ fn bench_send_traces(c: &mut Criterion) {
             .unwrap();
         b.iter(|| {
             rt.block_on(async {
-                let (exporter, _rx) = Exporter::start_test_with_capacity(1024);
+                let (exporter, _rx) =
+                    Exporter::start_test_with_capacity(1024, BackpressureStrategy::Drop);
                 exporter.send_traces(black_box(payload.clone()));
             });
         });
@@ -53,7 +54,8 @@ fn bench_send_traces(c: &mut Criterion) {
             .unwrap();
         b.iter(|| {
             rt.block_on(async {
-                let (exporter, _rx) = Exporter::start_test_with_capacity(1024);
+                let (exporter, _rx) =
+                    Exporter::start_test_with_capacity(1024, BackpressureStrategy::Drop);
                 for _ in 0..100 {
                     exporter.send_traces(black_box(payload.clone()));
                 }

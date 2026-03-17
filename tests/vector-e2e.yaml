@@ -1,0 +1,35 @@
+sources:
+  otel:
+    type: opentelemetry
+    grpc:
+      address: "0.0.0.0:4317"
+    http:
+      address: "0.0.0.0:4318"
+
+sinks:
+  traces_file:
+    type: file
+    inputs: ["otel.traces"]
+    path: "/tmp/vector-output/traces.json"
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+
+  logs_file:
+    type: file
+    inputs: ["otel.logs"]
+    path: "/tmp/vector-output/logs.json"
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+
+  metrics_file:
+    type: file
+    inputs: ["otel.metrics"]
+    path: "/tmp/vector-output/metrics.json"
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited

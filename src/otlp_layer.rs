@@ -383,6 +383,7 @@ mod tests {
             batch_size: 512,
             flush_interval: std::time::Duration::from_secs(1),
             max_concurrent_exports: 4,
+            backpressure_strategy: crate::exporter::BackpressureStrategy::Drop,
         });
         let _layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
     }

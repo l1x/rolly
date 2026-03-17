@@ -18,6 +18,14 @@ pub(crate) fn reset_dropped_total() {
     DROPPED_TOTAL.store(0, Ordering::Relaxed);
 }
 
+/// Configures behavior when the telemetry channel is full.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BackpressureStrategy {
+    /// Drop the message and increment `telemetry_dropped_total()`. Non-blocking.
+    #[default]
+    Drop,
+}
+
 /// Message types sent to the exporter background task.
 #[derive(Debug)]
 pub enum ExportMessage {
@@ -37,12 +45,14 @@ pub struct ExporterConfig {
     pub batch_size: usize,
     pub flush_interval: Duration,
     pub max_concurrent_exports: usize,
+    pub backpressure_strategy: BackpressureStrategy,
 }
 
 /// Handle to the exporter background task.
 #[derive(Clone)]
 pub struct Exporter {
     tx: mpsc::Sender<ExportMessage>,
+    backpressure_strategy: BackpressureStrategy,
 }
 
 impl Exporter {
@@ -63,54 +73,77 @@ impl Exporter {
             config.flush_interval,
             config.max_concurrent_exports,
         ));
-        Self { tx }
+        Self {
+            tx,
+            backpressure_strategy: config.backpressure_strategy,
+        }
     }
 
     /// Create an exporter for testing that doesn't spawn the HTTP loop.
     /// Returns the exporter and receiver so tests can read messages directly.
     #[cfg(any(test, feature = "_bench"))]
     pub fn start_test() -> (Self, mpsc::Receiver<ExportMessage>) {
-        let (tx, rx) = mpsc::channel(64);
-        (Self { tx }, rx)
+        Self::start_test_with_capacity(64, BackpressureStrategy::Drop)
     }
 
-    /// Create a test exporter with a specific channel capacity.
+    /// Create a test exporter with a specific channel capacity and backpressure strategy.
     #[cfg(any(test, feature = "_bench"))]
-    pub fn start_test_with_capacity(capacity: usize) -> (Self, mpsc::Receiver<ExportMessage>) {
+    pub fn start_test_with_capacity(
+        capacity: usize,
+        strategy: BackpressureStrategy,
+    ) -> (Self, mpsc::Receiver<ExportMessage>) {
         let (tx, rx) = mpsc::channel(capacity);
-        (Self { tx }, rx)
+        (
+            Self {
+                tx,
+                backpressure_strategy: strategy,
+            },
+            rx,
+        )
     }
 
     /// Send encoded trace data to the exporter.
     pub fn send_traces(&self, data: Vec<u8>) {
-        if self
-            .tx
-            .try_send(ExportMessage::Traces(Bytes::from(data)))
-            .is_err()
-        {
-            DROPPED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        match self.backpressure_strategy {
+            BackpressureStrategy::Drop => {
+                if self
+                    .tx
+                    .try_send(ExportMessage::Traces(Bytes::from(data)))
+                    .is_err()
+                {
+                    DROPPED_TOTAL.fetch_add(1, Ordering::Relaxed);
+                }
+            }
         }
     }
 
     /// Send encoded log data to the exporter.
     pub fn send_logs(&self, data: Vec<u8>) {
-        if self
-            .tx
-            .try_send(ExportMessage::Logs(Bytes::from(data)))
-            .is_err()
-        {
-            DROPPED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        match self.backpressure_strategy {
+            BackpressureStrategy::Drop => {
+                if self
+                    .tx
+                    .try_send(ExportMessage::Logs(Bytes::from(data)))
+                    .is_err()
+                {
+                    DROPPED_TOTAL.fetch_add(1, Ordering::Relaxed);
+                }
+            }
         }
     }
 
     /// Send encoded metrics data to the exporter.
     pub fn send_metrics(&self, data: Vec<u8>) {
-        if self
-            .tx
-            .try_send(ExportMessage::Metrics(Bytes::from(data)))
-            .is_err()
-        {
-            DROPPED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        match self.backpressure_strategy {
+            BackpressureStrategy::Drop => {
+                if self
+                    .tx
+                    .try_send(ExportMessage::Metrics(Bytes::from(data)))
+                    .is_err()
+                {
+                    DROPPED_TOTAL.fetch_add(1, Ordering::Relaxed);
+                }
+            }
         }
     }
 
@@ -379,7 +412,7 @@ mod tests {
     async fn drop_counter_increments_on_channel_full() {
         let before = dropped_total();
         // Capacity 2: fill channel, then the 3rd send should drop
-        let (exporter, _rx) = Exporter::start_test_with_capacity(2);
+        let (exporter, _rx) = Exporter::start_test_with_capacity(2, BackpressureStrategy::Drop);
         exporter.send_traces(vec![0x0A]);
         exporter.send_traces(vec![0x0A]);
         // Channel is full now
@@ -391,7 +424,7 @@ mod tests {
     #[tokio::test]
     async fn drop_counter_increments_for_logs_and_traces() {
         let before = dropped_total();
-        let (exporter, _rx) = Exporter::start_test_with_capacity(1);
+        let (exporter, _rx) = Exporter::start_test_with_capacity(1, BackpressureStrategy::Drop);
         exporter.send_traces(vec![0x0A]); // fills the channel
         exporter.send_traces(vec![0x0A]); // dropped
         exporter.send_logs(vec![0x0A]); // dropped
@@ -408,6 +441,7 @@ mod tests {
             batch_size: 512,
             flush_interval: Duration::from_secs(60),
             max_concurrent_exports: 4,
+            backpressure_strategy: BackpressureStrategy::Drop,
         }
     }
 
@@ -646,6 +680,7 @@ mod tests {
             batch_size: 100,
             flush_interval: Duration::from_millis(500),
             max_concurrent_exports: 2,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.flush_interval, Duration::from_millis(500));
@@ -694,6 +729,7 @@ mod tests {
             batch_size: 3,
             flush_interval: Duration::from_secs(60),
             max_concurrent_exports: 4,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 
@@ -752,6 +788,7 @@ mod tests {
             batch_size: 100, // large batch size — won't trigger batch flush
             flush_interval: Duration::from_millis(200), // short interval
             max_concurrent_exports: 4,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 
@@ -801,6 +838,7 @@ mod tests {
             batch_size: 100, // large — won't trigger automatically
             flush_interval: Duration::from_secs(60), // long — won't trigger on time
             max_concurrent_exports: 4,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 
@@ -850,6 +888,7 @@ mod tests {
             batch_size: 100,
             flush_interval: Duration::from_secs(60),
             max_concurrent_exports: 4,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 
@@ -906,6 +945,7 @@ mod tests {
             batch_size: 2,
             flush_interval: Duration::from_secs(60),
             max_concurrent_exports: 4,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 
@@ -988,6 +1028,7 @@ mod tests {
             batch_size: 1, // flush on every message — creates many concurrent posts
             flush_interval: Duration::from_secs(60),
             max_concurrent_exports: 8,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 
@@ -1053,6 +1094,7 @@ mod tests {
             batch_size: 1,
             flush_interval: Duration::from_secs(60),
             max_concurrent_exports: max_exports,
+            backpressure_strategy: BackpressureStrategy::Drop,
         };
         let exporter = Exporter::start(config);
 

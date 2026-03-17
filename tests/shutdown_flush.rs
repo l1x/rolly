@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use rolly::bench::{Exporter, ExporterConfig, OtlpLayer};
+use rolly::bench::{BackpressureStrategy, Exporter, ExporterConfig, OtlpLayer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing_subscriber::layer::SubscriberExt;
@@ -89,6 +89,7 @@ async fn all_spans_arrive_after_flush_and_shutdown() {
         batch_size: 512,
         flush_interval: Duration::from_secs(60),
         max_concurrent_exports: 4,
+        backpressure_strategy: BackpressureStrategy::Drop,
     });
 
     let layer = OtlpLayer::new(
@@ -142,6 +143,7 @@ async fn shutdown_completes_when_endpoint_is_failing() {
         batch_size: 512,
         flush_interval: Duration::from_secs(60),
         max_concurrent_exports: 4,
+        backpressure_strategy: BackpressureStrategy::Drop,
     });
 
     let layer = OtlpLayer::new(
@@ -210,6 +212,7 @@ async fn flush_waits_for_in_flight_exports() {
         batch_size: 1, // flush on every message
         flush_interval: Duration::from_secs(60),
         max_concurrent_exports: 8,
+        backpressure_strategy: BackpressureStrategy::Drop,
     });
 
     let layer = OtlpLayer::new(
