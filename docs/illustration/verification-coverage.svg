@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="685" viewBox="0 0 1100 685">
+  <style>
+    .title { font: bold 18px monospace; fill: #1e293b; }
+    .subtitle { font: 13px system-ui, -apple-system, sans-serif; fill: #64748b; }
+    .card-title { font: bold 13px monospace; }
+    .file-hdr { font: bold 11px monospace; fill: #475569; }
+    .item { font: 10.5px monospace; fill: #1e293b; }
+    .desc { font: 10px system-ui, -apple-system, sans-serif; fill: #94a3b8; }
+    .badge { font: 600 11px system-ui, -apple-system, sans-serif; fill: white; }
+  </style>
+
+  <!-- Canvas -->
+  <rect width="1100" height="685" fill="#fafafa"/>
+
+  <!-- Title -->
+  <text x="550" y="25" text-anchor="middle" class="title">Formal Verification &amp; Testing Coverage</text>
+  <text x="550" y="45" text-anchor="middle" class="subtitle">rolly v0.9.0 — 33 verification artifacts across 4 complementary tools</text>
+
+  <!-- Stat badges -->
+  <g transform="translate(283,57)">
+    <rect width="130" height="22" rx="11" fill="#2563eb"/>
+    <text x="65" y="15" text-anchor="middle" class="badge">19 Kani Proofs</text>
+    <rect x="145" width="115" height="22" rx="11" fill="#ea580c"/>
+    <text x="202" y="15" text-anchor="middle" class="badge">2 TLA+ Specs</text>
+    <rect x="275" width="115" height="22" rx="11" fill="#059669"/>
+    <text x="332" y="15" text-anchor="middle" class="badge">9 Proptests</text>
+    <rect x="405" width="130" height="22" rx="11" fill="#7c3aed"/>
+    <text x="470" y="15" text-anchor="middle" class="badge">3 Fuzz Targets</text>
+  </g>
+
+  <!-- ═══ KANI PROOF HARNESSES ═══ -->
+  <g transform="translate(20,92)">
+    <rect width="520" height="408" rx="4" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <rect width="520" height="4" rx="4" fill="#2563eb"/>
+    <text x="15" y="24" class="card-title" fill="#2563eb">Kani Proof Harnesses</text>
+
+    <!-- src/proto.rs -->
+    <text x="15" y="46" class="file-hdr">src/proto.rs</text>
+    <circle cx="22" cy="58" r="2" fill="#2563eb"/><text x="30" y="62" class="item">encode_varint_no_panic</text>
+    <circle cx="22" cy="73" r="2" fill="#2563eb"/><text x="30" y="77" class="item">encode_varint_max_len</text>
+    <circle cx="22" cy="88" r="2" fill="#2563eb"/><text x="30" y="92" class="item">encode_tag_no_panic</text>
+    <circle cx="22" cy="103" r="2" fill="#2563eb"/><text x="30" y="107" class="item">encode_varint_field_zero_empty</text>
+    <circle cx="22" cy="118" r="2" fill="#2563eb"/><text x="30" y="122" class="item">encode_varint_field_always_zero_nonempty</text>
+    <circle cx="22" cy="133" r="2" fill="#2563eb"/><text x="30" y="137" class="item">encode_bytes_field_empty_noop</text>
+    <circle cx="22" cy="148" r="2" fill="#2563eb"/><text x="30" y="152" class="item">encode_fixed64_field_size</text>
+    <circle cx="22" cy="163" r="2" fill="#2563eb"/><text x="30" y="167" class="item">encode_varint_to_slice_no_panic</text>
+    <circle cx="22" cy="178" r="2" fill="#2563eb"/><text x="30" y="182" class="item">encode_packed_fixed64_empty_noop</text>
+    <circle cx="22" cy="193" r="2" fill="#2563eb"/><text x="30" y="197" class="item">encode_packed_double_empty_noop</text>
+    <circle cx="22" cy="208" r="2" fill="#2563eb"/><text x="30" y="212" class="item">encode_message_field_in_place_no_panic</text>
+
+    <!-- src/trace_id.rs -->
+    <text x="15" y="234" class="file-hdr">src/trace_id.rs</text>
+    <circle cx="22" cy="246" r="2" fill="#2563eb"/><text x="30" y="250" class="item">hex_encode_output_length</text>
+
+    <!-- src/otlp_layer.rs -->
+    <text x="15" y="272" class="file-hdr">src/otlp_layer.rs</text>
+    <circle cx="22" cy="284" r="2" fill="#2563eb"/><text x="30" y="288" class="item">should_sample_boundary</text>
+    <circle cx="22" cy="299" r="2" fill="#2563eb"/><text x="30" y="303" class="item">hex_nibble_all_bytes</text>
+    <circle cx="22" cy="314" r="2" fill="#2563eb"/><text x="30" y="318" class="item">hex_to_bytes_16_length_check</text>
+
+    <!-- src/metrics.rs -->
+    <text x="15" y="340" class="file-hdr">src/metrics.rs</text>
+    <circle cx="22" cy="352" r="2" fill="#2563eb"/><text x="30" y="356" class="item">attrs_hash_no_panic</text>
+    <circle cx="22" cy="367" r="2" fill="#2563eb"/><text x="30" y="371" class="item">attrs_hash_order_independent</text>
+    <circle cx="22" cy="382" r="2" fill="#2563eb"/><text x="30" y="386" class="item">attrs_hash_empty_is_zero</text>
+    <circle cx="22" cy="397" r="2" fill="#2563eb"/><text x="30" y="401" class="item">partition_point_valid_bucket</text>
+  </g>
+
+  <!-- ═══ TLA+ CONCURRENCY MODELS ═══ -->
+  <g transform="translate(560,92)">
+    <rect width="520" height="222" rx="4" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <rect width="520" height="4" rx="4" fill="#ea580c"/>
+    <text x="15" y="24" class="card-title" fill="#ea580c">TLA+ Concurrency Models</text>
+
+    <!-- specs/exporter.tla -->
+    <text x="15" y="46" class="file-hdr">specs/exporter.tla</text>
+    <circle cx="22" cy="58" r="2" fill="#ea580c"/><text x="30" y="62" class="item">Liveness</text><text x="160" y="62" class="desc">buffers eventually flush</text>
+    <circle cx="22" cy="73" r="2" fill="#ea580c"/><text x="30" y="77" class="item">Boundedness</text><text x="160" y="77" class="desc">channel never exceeds capacity</text>
+    <circle cx="22" cy="88" r="2" fill="#ea580c"/><text x="30" y="92" class="item">No deadlock</text><text x="160" y="92" class="desc">flush and shutdown always complete</text>
+
+    <!-- specs/metrics_registry.tla -->
+    <text x="15" y="114" class="file-hdr">specs/metrics_registry.tla</text>
+    <circle cx="22" cy="126" r="2" fill="#ea580c"/><text x="30" y="130" class="item">No deadlock</text><text x="160" y="130" class="desc">concurrent write + collect</text>
+    <circle cx="22" cy="141" r="2" fill="#ea580c"/><text x="30" y="145" class="item">Liveness</text><text x="160" y="145" class="desc">collect() returns without blocking</text>
+    <circle cx="22" cy="156" r="2" fill="#ea580c"/><text x="30" y="160" class="item">Completeness</text><text x="160" y="160" class="desc">snapshot sees all instruments</text>
+
+    <!-- Aggregation loop -->
+    <text x="15" y="182" class="file-hdr">Metrics aggregation loop</text>
+    <circle cx="22" cy="194" r="2" fill="#ea580c"/><text x="30" y="198" class="item">Progress</text><text x="160" y="198" class="desc">loop advances every flush interval</text>
+    <circle cx="22" cy="209" r="2" fill="#ea580c"/><text x="30" y="213" class="item">Bounded size</text><text x="160" y="213" class="desc">proportional to instruments, not observations</text>
+  </g>
+
+  <!-- ═══ PROPERTY-BASED TESTS ═══ -->
+  <g transform="translate(560,336)">
+    <rect width="520" height="216" rx="4" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <rect width="520" height="4" rx="4" fill="#059669"/>
+    <text x="15" y="24" class="card-title" fill="#059669">Property-Based Tests</text>
+
+    <!-- Proto encoding roundtrips -->
+    <text x="15" y="46" class="file-hdr">Proto encoding roundtrips</text>
+    <circle cx="22" cy="58" r="2" fill="#059669"/><text x="30" y="62" class="item">varint_field_has_valid_tag_and_value</text>
+    <circle cx="22" cy="73" r="2" fill="#059669"/><text x="30" y="77" class="item">varint_field_zero_is_skipped</text>
+    <circle cx="22" cy="88" r="2" fill="#059669"/><text x="30" y="92" class="item">string_field_roundtrip</text>
+    <circle cx="22" cy="103" r="2" fill="#059669"/><text x="30" y="107" class="item">bytes_field_roundtrip</text>
+    <circle cx="22" cy="118" r="2" fill="#059669"/><text x="30" y="122" class="item">message_field_in_place_matches_allocating</text>
+    <circle cx="22" cy="133" r="2" fill="#059669"/><text x="30" y="137" class="item">string_field_various_field_numbers</text>
+
+    <!-- Higher-level encoding -->
+    <text x="15" y="159" class="file-hdr">Higher-level encoding</text>
+    <circle cx="22" cy="171" r="2" fill="#059669"/><text x="30" y="175" class="item">encode_trace_request_no_panic</text>
+    <circle cx="22" cy="186" r="2" fill="#059669"/><text x="30" y="190" class="item">encode_logs_request_no_panic</text>
+    <circle cx="22" cy="201" r="2" fill="#059669"/><text x="30" y="205" class="item">hex_to_bytes_16_roundtrip</text>
+  </g>
+
+  <!-- ═══ FUZZ TARGETS ═══ -->
+  <g transform="translate(20,572)">
+    <rect width="1060" height="95" rx="4" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <rect width="1060" height="4" rx="4" fill="#7c3aed"/>
+    <text x="15" y="24" class="card-title" fill="#7c3aed">Fuzz Targets</text>
+    <text x="145" y="24" class="desc">cargo-fuzz / libfuzzer</text>
+
+    <circle cx="22" cy="40" r="2" fill="#7c3aed"/><text x="30" y="44" class="item">fuzz_encode_trace</text><text x="240" y="44" class="desc">arbitrary bytes &#x2192; SpanData &#x2192; encode_export_trace_request</text>
+    <circle cx="22" cy="55" r="2" fill="#7c3aed"/><text x="30" y="59" class="item">fuzz_encode_logs</text><text x="240" y="59" class="desc">arbitrary bytes &#x2192; LogData &#x2192; encode_export_logs_request</text>
+    <circle cx="22" cy="70" r="2" fill="#7c3aed"/><text x="30" y="74" class="item">fuzz_hex_to_bytes_16</text><text x="240" y="74" class="desc">arbitrary &amp;str &#x2192; hex_to_bytes_16</text>
+  </g>
+</svg>

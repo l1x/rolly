@@ -5,12 +5,24 @@
 
 use proptest::prelude::*;
 use rolly::bench::{
-    encode_bytes_field, encode_message_field, encode_message_field_in_place, encode_string_field,
-    encode_varint_field,
+    encode_bytes_field,
     // Higher-level encoding
-    encode_export_logs_request, encode_export_trace_request,
-    hex_encode, hex_to_bytes_16,
-    AnyValue, KeyValue, LogData, SeverityNumber, SpanData, SpanKind, SpanStatus, StatusCode,
+    encode_export_logs_request,
+    encode_export_trace_request,
+    encode_message_field,
+    encode_message_field_in_place,
+    encode_string_field,
+    encode_varint_field,
+    hex_encode,
+    hex_to_bytes_16,
+    AnyValue,
+    KeyValue,
+    LogData,
+    SeverityNumber,
+    SpanData,
+    SpanKind,
+    SpanStatus,
+    StatusCode,
 };
 
 /// Decode a varint from a byte slice, returning (value, bytes_consumed).
@@ -158,10 +170,8 @@ fn arb_any_value() -> impl Strategy<Value = AnyValue> {
 }
 
 fn arb_key_value() -> impl Strategy<Value = KeyValue> {
-    ("[a-zA-Z][a-zA-Z0-9_.]{0,31}", arb_any_value()).prop_map(|(key, value)| KeyValue {
-        key,
-        value,
-    })
+    ("[a-zA-Z][a-zA-Z0-9_.]{0,31}", arb_any_value())
+        .prop_map(|(key, value)| KeyValue { key, value })
 }
 
 fn arb_span_kind() -> impl Strategy<Value = SpanKind> {
@@ -185,17 +195,17 @@ fn arb_status_code() -> impl Strategy<Value = StatusCode> {
 
 fn arb_span_data() -> impl Strategy<Value = SpanData> {
     (
-        any::<[u8; 16]>(),                                    // trace_id
-        any::<[u8; 8]>(),                                     // span_id
-        any::<[u8; 8]>(),                                     // parent_span_id
-        "[a-zA-Z][a-zA-Z0-9_. ]{0,63}",                      // name
+        any::<[u8; 16]>(),              // trace_id
+        any::<[u8; 8]>(),               // span_id
+        any::<[u8; 8]>(),               // parent_span_id
+        "[a-zA-Z][a-zA-Z0-9_. ]{0,63}", // name
         arb_span_kind(),
-        any::<u64>(),                                         // start_time
-        any::<u64>(),                                         // end_time
-        proptest::collection::vec(arb_key_value(), 0..8),     // attributes
+        any::<u64>(),                                     // start_time
+        any::<u64>(),                                     // end_time
+        proptest::collection::vec(arb_key_value(), 0..8), // attributes
         proptest::option::of(
             ("[a-zA-Z0-9 ]{0,32}", arb_status_code())
-                .prop_map(|(msg, code)| SpanStatus { message: msg, code })
+                .prop_map(|(msg, code)| SpanStatus { message: msg, code }),
         ),
     )
         .prop_map(
@@ -228,16 +238,24 @@ fn arb_severity_number() -> impl Strategy<Value = SeverityNumber> {
 
 fn arb_log_data() -> impl Strategy<Value = LogData> {
     (
-        any::<u64>(),                                         // time_unix_nano
+        any::<u64>(), // time_unix_nano
         arb_severity_number(),
-        "[A-Z]{1,8}",                                        // severity_text
-        arb_any_value(),                                      // body
-        proptest::collection::vec(arb_key_value(), 0..8),     // attributes
-        any::<[u8; 16]>(),                                    // trace_id
-        any::<[u8; 8]>(),                                     // span_id
+        "[A-Z]{1,8}",                                     // severity_text
+        arb_any_value(),                                  // body
+        proptest::collection::vec(arb_key_value(), 0..8), // attributes
+        any::<[u8; 16]>(),                                // trace_id
+        any::<[u8; 8]>(),                                 // span_id
     )
         .prop_map(
-            |(time_unix_nano, severity_number, severity_text, body, attributes, trace_id, span_id)| {
+            |(
+                time_unix_nano,
+                severity_number,
+                severity_text,
+                body,
+                attributes,
+                trace_id,
+                span_id,
+            )| {
                 LogData {
                     time_unix_nano,
                     severity_number,
