@@ -407,6 +407,55 @@ mod tests {
         });
     }
 
+    #[tokio::test]
+    async fn custom_resource_attributes_appear_in_trace() {
+        let (exporter, mut rx) = Exporter::start_test();
+        let custom_attrs = vec![
+            ("team".to_string(), "platform".to_string()),
+            ("region".to_string(), "us-east-1".to_string()),
+        ];
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &custom_attrs,
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        {
+            let span = tracing::info_span!("attr-span");
+            let _enter = span.enter();
+        }
+
+        let msg = rx.recv().await.expect("should receive trace");
+        match msg {
+            ExportMessage::Traces(data) => {
+                assert!(
+                    data.windows(4).any(|w| w == b"team"),
+                    "custom attribute key 'team' not found in protobuf"
+                );
+                assert!(
+                    data.windows(8).any(|w| w == b"platform"),
+                    "custom attribute value 'platform' not found in protobuf"
+                );
+                assert!(
+                    data.windows(6).any(|w| w == b"region"),
+                    "custom attribute key 'region' not found in protobuf"
+                );
+                assert!(
+                    data.windows(9).any(|w| w == b"us-east-1"),
+                    "custom attribute value 'us-east-1' not found in protobuf"
+                );
+            }
+            other => panic!("expected Traces, got {:?}", other),
+        }
+    }
+
     #[test]
     fn hex_to_bytes_16_valid() {
         let result = hex_to_bytes_16("0102030405060708090a0b0c0d0e0f10");
