@@ -49,6 +49,7 @@ async fn traces_logs_metrics_arrive_at_collector() {
         metrics_flush_interval: Some(Duration::from_secs(1)),
         sampling_rate: Some(1.0),
         backpressure_strategy: rolly::BackpressureStrategy::Drop,
+        resource_attributes: vec![],
     });
 
     // Create spans and events

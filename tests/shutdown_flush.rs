@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use rolly::bench::{BackpressureStrategy, Exporter, ExporterConfig, OtlpLayer};
+use rolly::bench::{BackpressureStrategy, Exporter, ExporterConfig, OtlpLayer, OtlpLayerConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing_subscriber::layer::SubscriberExt;
@@ -92,15 +92,16 @@ async fn all_spans_arrive_after_flush_and_shutdown() {
         backpressure_strategy: BackpressureStrategy::Drop,
     });
 
-    let layer = OtlpLayer::new(
-        exporter.clone(),
-        "flush-test",
-        "0.0.1",
-        "test",
-        true,
-        false,
-        1.0,
-    );
+    let layer = OtlpLayer::new(OtlpLayerConfig {
+        exporter: exporter.clone(),
+        service_name: "flush-test",
+        service_version: "0.0.1",
+        environment: "test",
+        resource_attributes: &[],
+        export_traces: true,
+        export_logs: false,
+        sampling_rate: 1.0,
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -146,15 +147,16 @@ async fn shutdown_completes_when_endpoint_is_failing() {
         backpressure_strategy: BackpressureStrategy::Drop,
     });
 
-    let layer = OtlpLayer::new(
-        exporter.clone(),
-        "fail-test",
-        "0.0.1",
-        "test",
-        true,
-        false,
-        1.0,
-    );
+    let layer = OtlpLayer::new(OtlpLayerConfig {
+        exporter: exporter.clone(),
+        service_name: "fail-test",
+        service_version: "0.0.1",
+        environment: "test",
+        resource_attributes: &[],
+        export_traces: true,
+        export_logs: false,
+        sampling_rate: 1.0,
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -215,15 +217,16 @@ async fn flush_waits_for_in_flight_exports() {
         backpressure_strategy: BackpressureStrategy::Drop,
     });
 
-    let layer = OtlpLayer::new(
-        exporter.clone(),
-        "inflight-test",
-        "0.0.1",
-        "test",
-        true,
-        false,
-        1.0,
-    );
+    let layer = OtlpLayer::new(OtlpLayerConfig {
+        exporter: exporter.clone(),
+        service_name: "inflight-test",
+        service_version: "0.0.1",
+        environment: "test",
+        resource_attributes: &[],
+        export_traces: true,
+        export_logs: false,
+        sampling_rate: 1.0,
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
 

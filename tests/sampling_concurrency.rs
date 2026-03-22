@@ -115,13 +115,22 @@ fn sampling_single_trace_id_many_calls() {
 
 #[test]
 fn sampled_out_produces_zero_channel_messages_under_concurrency() {
-    use rolly::bench::{Exporter, OtlpLayer};
+    use rolly::bench::{Exporter, OtlpLayer, OtlpLayerConfig};
     use tracing_subscriber::layer::SubscriberExt;
 
     let before = rolly::telemetry_dropped_total();
     let (exporter, mut rx) =
         Exporter::start_test_with_capacity(1024, rolly::bench::BackpressureStrategy::Drop);
-    let layer = OtlpLayer::new(exporter, "sample-test", "0.0.1", "test", true, true, 0.0);
+    let layer = OtlpLayer::new(OtlpLayerConfig {
+        exporter,
+        service_name: "sample-test",
+        service_version: "0.0.1",
+        environment: "test",
+        resource_attributes: &[],
+        export_traces: true,
+        export_logs: true,
+        sampling_rate: 0.0,
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     let dispatch = tracing::Dispatch::new(subscriber);
 

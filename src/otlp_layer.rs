@@ -167,6 +167,18 @@ pub fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
 
 // --- Layer ---
 
+/// Configuration for constructing an `OtlpLayer`.
+pub struct OtlpLayerConfig<'a> {
+    pub exporter: Exporter,
+    pub service_name: &'a str,
+    pub service_version: &'a str,
+    pub environment: &'a str,
+    pub resource_attributes: &'a [(String, String)],
+    pub export_traces: bool,
+    pub export_logs: bool,
+    pub sampling_rate: f64,
+}
+
 /// Custom tracing Layer that encodes spans/events as OTLP protobuf and sends to Exporter.
 pub struct OtlpLayer {
     exporter: Exporter,
@@ -180,37 +192,35 @@ pub struct OtlpLayer {
 }
 
 impl OtlpLayer {
-    pub fn new(
-        exporter: Exporter,
-        service_name: &str,
-        service_version: &str,
-        environment: &str,
-        export_traces: bool,
-        export_logs: bool,
-        sampling_rate: f64,
-    ) -> Self {
-        let resource_attrs = vec![
+    pub fn new(config: OtlpLayerConfig<'_>) -> Self {
+        let mut resource_attrs = vec![
             KeyValue {
                 key: "service.name".to_string(),
-                value: AnyValue::String(service_name.to_string()),
+                value: AnyValue::String(config.service_name.to_string()),
             },
             KeyValue {
                 key: "service.version".to_string(),
-                value: AnyValue::String(service_version.to_string()),
+                value: AnyValue::String(config.service_version.to_string()),
             },
             KeyValue {
                 key: "deployment.environment".to_string(),
-                value: AnyValue::String(environment.to_string()),
+                value: AnyValue::String(config.environment.to_string()),
             },
         ];
+        for (k, v) in config.resource_attributes {
+            resource_attrs.push(KeyValue {
+                key: k.clone(),
+                value: AnyValue::String(v.clone()),
+            });
+        }
         Self {
-            exporter,
+            exporter: config.exporter,
             resource_attrs,
             scope_name: "pz-o11y".to_string(),
             scope_version: env!("CARGO_PKG_VERSION").to_string(),
-            export_traces,
-            export_logs,
-            sampling_rate,
+            export_traces: config.export_traces,
+            export_logs: config.export_logs,
+            sampling_rate: config.sampling_rate,
         }
     }
 }
@@ -385,7 +395,16 @@ mod tests {
             max_concurrent_exports: 4,
             backpressure_strategy: crate::exporter::BackpressureStrategy::Drop,
         });
-        let _layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let _layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
     }
 
     #[test]
@@ -410,7 +429,16 @@ mod tests {
     #[tokio::test]
     async fn layer_captures_span_and_sends_trace_on_close() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -441,7 +469,16 @@ mod tests {
     #[tokio::test]
     async fn layer_captures_event_and_sends_log() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -462,7 +499,16 @@ mod tests {
     #[tokio::test]
     async fn layer_event_inside_span_carries_trace_context() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -498,7 +544,16 @@ mod tests {
     #[tokio::test]
     async fn field_collector_handles_all_types() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -542,7 +597,16 @@ mod tests {
     #[tokio::test]
     async fn parent_span_id_propagated_to_child() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -583,7 +647,16 @@ mod tests {
     #[tokio::test]
     async fn layer_skips_log_export_when_disabled() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, false, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: false,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -611,7 +684,16 @@ mod tests {
     #[tokio::test]
     async fn layer_skips_trace_export_when_disabled() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", false, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: false,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -690,7 +772,16 @@ mod tests {
     #[tokio::test]
     async fn sampling_rate_zero_drops_all_traces_and_logs() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 0.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 0.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -710,7 +801,16 @@ mod tests {
     #[tokio::test]
     async fn sampling_rate_one_exports_all() {
         let (exporter, mut rx) = Exporter::start_test();
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 1.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 1.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -733,7 +833,16 @@ mod tests {
     async fn child_spans_inherit_parent_sampling_decision() {
         let (exporter, mut rx) = Exporter::start_test();
         // Rate 0.0: nothing should be exported
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 0.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 0.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -759,7 +868,16 @@ mod tests {
         let (exporter, mut rx) = Exporter::start_test();
         // Even at rate 0.0, events outside any span have no sampling context
         // and default to sampled=true
-        let layer = OtlpLayer::new(exporter, "test-svc", "0.0.1", "test", true, true, 0.0);
+        let layer = OtlpLayer::new(OtlpLayerConfig {
+            exporter,
+            service_name: "test-svc",
+            service_version: "0.0.1",
+            environment: "test",
+            resource_attributes: &[],
+            export_traces: true,
+            export_logs: true,
+            sampling_rate: 0.0,
+        });
         let subscriber = tracing_subscriber::registry().with(layer);
         let _guard = tracing::subscriber::set_default(subscriber);
 

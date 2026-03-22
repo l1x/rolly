@@ -83,6 +83,7 @@ async fn init_creates_spans_that_arrive_as_otlp_protobuf() {
         metrics_flush_interval: None,
         sampling_rate: None,
         backpressure_strategy: rolly::BackpressureStrategy::Drop,
+        resource_attributes: vec![],
     });
 
     // Create a span with a known trace_id

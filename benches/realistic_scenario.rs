@@ -67,15 +67,16 @@ fn bench_subscriber() -> (
     tokio::sync::mpsc::Receiver<ExportMessage>,
 ) {
     let (exporter, rx) = Exporter::start_test_with_capacity(1_000_000, BackpressureStrategy::Drop);
-    let layer = OtlpLayer::new(
+    let layer = OtlpLayer::new(OtlpLayerConfig {
         exporter,
-        "bench-ecommerce",
-        "0.5.1",
-        "bench",
-        true,
-        true,
-        1.0,
-    );
+        service_name: "bench-ecommerce",
+        service_version: "0.5.1",
+        environment: "bench",
+        resource_attributes: &[],
+        export_traces: true,
+        export_logs: true,
+        sampling_rate: 1.0,
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     (subscriber, rx)
 }

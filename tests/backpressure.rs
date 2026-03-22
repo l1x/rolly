@@ -5,7 +5,7 @@
 use std::sync::{Arc, Barrier};
 use std::time::Instant;
 
-use rolly::bench::{BackpressureStrategy, Exporter, OtlpLayer};
+use rolly::bench::{BackpressureStrategy, Exporter, OtlpLayer, OtlpLayerConfig};
 use tracing_subscriber::layer::SubscriberExt;
 
 /// Create a Dispatch backed by an OtlpLayer with a test exporter of the given capacity
@@ -22,15 +22,16 @@ fn make_dispatch(
     tokio::sync::mpsc::Receiver<rolly::bench::ExportMessage>,
 ) {
     let (exporter, rx) = Exporter::start_test_with_capacity(capacity, strategy);
-    let layer = OtlpLayer::new(
+    let layer = OtlpLayer::new(OtlpLayerConfig {
         exporter,
-        "bp-test",
-        "0.0.1",
-        "test",
+        service_name: "bp-test",
+        service_version: "0.0.1",
+        environment: "test",
+        resource_attributes: &[],
         export_traces,
         export_logs,
         sampling_rate,
-    );
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     (tracing::Dispatch::new(subscriber), rx)
 }

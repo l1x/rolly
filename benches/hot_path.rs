@@ -12,15 +12,16 @@ fn make_dispatch(
     tokio::sync::mpsc::Receiver<ExportMessage>,
 ) {
     let (exporter, rx) = Exporter::start_test_with_capacity(capacity, BackpressureStrategy::Drop);
-    let layer = OtlpLayer::new(
+    let layer = OtlpLayer::new(OtlpLayerConfig {
         exporter,
-        "bench-svc",
-        "0.0.1",
-        "bench",
-        true,
-        true,
+        service_name: "bench-svc",
+        service_version: "0.0.1",
+        environment: "bench",
+        resource_attributes: &[],
+        export_traces: true,
+        export_logs: true,
         sampling_rate,
-    );
+    });
     let subscriber = tracing_subscriber::registry().with(layer);
     (tracing::Dispatch::new(subscriber), rx)
 }

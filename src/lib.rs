@@ -56,6 +56,9 @@ pub struct TelemetryConfig {
     /// What to do when the export channel is full.
     /// Defaults to `BackpressureStrategy::Drop`.
     pub backpressure_strategy: BackpressureStrategy,
+    /// Custom OTel resource attributes appended after the standard three
+    /// (service.name, service.version, deployment.environment).
+    pub resource_attributes: Vec<(String, String)>,
 }
 
 /// Guard that flushes pending telemetry on drop.
@@ -137,15 +140,16 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
         });
         let sampling_rate = config.sampling_rate.unwrap_or(1.0).clamp(0.0, 1.0);
         let layer = if export_traces || export_logs {
-            Some(OtlpLayer::new(
-                exp.clone(),
-                &config.service_name,
-                &config.service_version,
-                &config.environment,
+            Some(OtlpLayer::new(otlp_layer::OtlpLayerConfig {
+                exporter: exp.clone(),
+                service_name: &config.service_name,
+                service_version: &config.service_version,
+                environment: &config.environment,
+                resource_attributes: &config.resource_attributes,
                 export_traces,
                 export_logs,
                 sampling_rate,
-            ))
+            }))
         } else {
             None
         };
@@ -181,6 +185,7 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
             let service_name = config.service_name;
             let service_version = config.service_version;
             let environment = config.environment;
+            let resource_attributes = config.resource_attributes;
             tokio::spawn(async move {
                 metrics_aggregation_loop(
                     exporter,
@@ -188,6 +193,7 @@ pub fn init(config: TelemetryConfig) -> TelemetryGuard {
                     service_name,
                     service_version,
                     environment,
+                    resource_attributes,
                 )
                 .await;
             });
@@ -204,11 +210,12 @@ async fn metrics_aggregation_loop(
     service_name: String,
     service_version: String,
     environment: String,
+    resource_attributes: Vec<(String, String)>,
 ) {
     use crate::otlp_metrics::encode_export_metrics_request;
     use crate::otlp_trace::{AnyValue, KeyValue};
 
-    let resource_attrs = vec![
+    let mut resource_attrs = vec![
         KeyValue {
             key: "service.name".to_string(),
             value: AnyValue::String(service_name),
@@ -222,6 +229,12 @@ async fn metrics_aggregation_loop(
             value: AnyValue::String(environment),
         },
     ];
+    for (k, v) in resource_attributes {
+        resource_attrs.push(KeyValue {
+            key: k,
+            value: AnyValue::String(v),
+        });
+    }
 
     let start_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -289,7 +302,7 @@ pub mod bench {
     pub fn should_sample(trace_id: [u8; 16], sampling_rate: f64) -> bool {
         crate::otlp_layer::should_sample(trace_id, sampling_rate)
     }
-    pub use crate::otlp_layer::OtlpLayer;
+    pub use crate::otlp_layer::{OtlpLayer, OtlpLayerConfig};
     pub use crate::otlp_log::{encode_export_logs_request, LogData, SeverityNumber};
     pub use crate::otlp_metrics::encode_export_metrics_request;
     pub use crate::otlp_trace::{
@@ -299,6 +312,7 @@ pub mod bench {
     pub use crate::proto::{encode_message_field, encode_message_field_in_place};
     pub use crate::trace_id::{generate_span_id, generate_trace_id, hex_encode};
 
+    #[allow(clippy::result_unit_err)]
     pub fn hex_to_bytes_16(s: &str) -> Result<[u8; 16], ()> {
         crate::otlp_layer::hex_to_bytes_16(s)
     }
@@ -333,6 +347,7 @@ mod tests {
             metrics_flush_interval: None,
             sampling_rate: None,
             backpressure_strategy: BackpressureStrategy::Drop,
+            resource_attributes: vec![],
         };
     }
 
